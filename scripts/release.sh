@@ -27,6 +27,7 @@ cp README.md "$OUT/"
 cp docs/需求规格-v2.html "$OUT/docs/"
 cp scripts/install-browser.sh "$OUT/scripts/"
 
-(cd dist && ditto -c -k --keepParent "$NAME" "$NAME.zip")
+# --norsrc --noextattr：不把 macOS 扩展属性打成 ._ 文件
+(cd dist && ditto -c -k --norsrc --noextattr --noacl --keepParent "$NAME" "$NAME.zip")
 shasum -a 256 "dist/$NAME.zip" | tee "dist/$NAME.zip.sha256"
 echo "已生成 dist/$NAME.zip"
