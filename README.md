@@ -47,6 +47,7 @@ scripts/install-browser.sh --check   # 只检查已安装的版本
 | `internal/launcher` | 环境锁（记录主程序与浏览器 PID）、孤儿浏览器清理、fingerprint-chromium 启动参数 |
 | `internal/runner` | 加锁 → 清理孤儿 → 中转 → 出口校验（不通过不启动）→ 浏览器 → 复查 → 清理 |
 | `internal/admin` | 最小管理页，带令牌、Host、Origin 校验（完整管理页在阶段 4） |
+| `internal/e2e` | 端到端测试：本机临时起带随机用户名密码的模拟 socks5h / http 上游，代替真实代理（见下方“测试”） |
 
 ## 编译
 
@@ -58,6 +59,20 @@ go build -o bin/envbrowser ./cmd/envbrowser
 # 打包发布（产物在 dist/，只含程序、README、文档、安装脚本）
 scripts/release.sh v0.2.0
 ```
+
+## 测试
+
+不需要真实代理。`internal/e2e` 在本机临时起模拟上游（用户名密码每次随机生成），验证：
+
+- socks5h / http 两种上游都能带认证打开 http（80）和 https（443）网站，上游收到的是域名（中转不在本地解析）
+- 密码错误、上游掉线时打不开，网站收不到任何连接（没有直连）
+- 本机和内网地址不会交给上游
+- 运行中出口 IP 或国家变化立即断网
+- **真浏览器（无界面）**：两个环境 Cookie 互不可见、重开后保留，时区和 CPU 核数按配置生效
+
+真浏览器那项需要先运行 `scripts/install-browser.sh`；加 `-short` 跳过。浏览器装在别处时用 `ENVBROWSER_CHROMIUM=/路径/Chromium.app` 指定。
+
+模拟测不了、仍需真实代理确认的只有：真实出口 IP 与录入值一致、真实 http 代理不加暴露头、有界面时零直连且本机无 DNS 查询（需求规格第 12.1 节）。
 
 ## 使用
 
