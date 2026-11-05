@@ -16,10 +16,10 @@ import (
 type Settings struct {
 	ChromiumPath   string   `json:"chromium_path"`
 	ChromiumVer    string   `json:"chromium_version"`
-	AdminAddr      string   `json:"admin_addr"`       // 管理页面，默认 127.0.0.1:8800
-	PortMin        int      `json:"port_min"`         // 中转端口范围
+	AdminAddr      string   `json:"admin_addr"` // 管理页面，默认 127.0.0.1:8800
+	PortMin        int      `json:"port_min"`   // 中转端口范围
 	PortMax        int      `json:"port_max"`
-	RecheckMinSec  int      `json:"recheck_min_sec"`  // 出口复查随机间隔
+	RecheckMinSec  int      `json:"recheck_min_sec"` // 出口复查随机间隔
 	RecheckMaxSec  int      `json:"recheck_max_sec"`
 	RecheckFailMax int      `json:"recheck_fail_max"` // 连续几次全部失败才断网
 	EchoServices   []string `json:"echo_services"`    // 公共出口 IP 回显服务
@@ -27,7 +27,7 @@ type Settings struct {
 	TestMode       bool     `json:"test_mode"`        // 测试模式，默认关
 	TestTarget     string   `json:"test_target"`      // 测试模式下唯一放行的本机地址
 	MemoryWarnN    int      `json:"memory_warn_n"`
-	PFEnabled      bool     `json:"pf_enabled"`       // pf 防火墙开关，默认关；阶段一未实现
+	PFEnabled      bool     `json:"pf_enabled"` // pf 防火墙开关，默认关；阶段一未实现
 	DefaultTZ      string   `json:"default_timezone"`
 }
 
