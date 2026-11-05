@@ -131,3 +131,23 @@ func TestMigrateV1(t *testing.T) {
 		t.Error("迁移结果应已保存")
 	}
 }
+
+func TestZonesForCountry(t *testing.T) {
+	if zs := ZonesForCountry("jp"); len(zs) != 1 || zs[0].TZ != "Asia/Tokyo" {
+		t.Errorf("JP 应唯一对应东京: %v", zs)
+	}
+	if zs := ZonesForCountry("US"); len(zs) != 4 {
+		t.Errorf("US 应有 4 个候选时区: %d", len(zs))
+	}
+	if len(ZonesForCountry("DE")) != 0 {
+		t.Error("不在列表中的国家应返回空")
+	}
+	for _, z := range Zones {
+		if len(z.Country) != 2 {
+			t.Errorf("%s 缺国家代码", z.TZ)
+		}
+	}
+	if CountryOfZone("Asia/Taipei") != "TW" {
+		t.Error("CountryOfZone 错误")
+	}
+}

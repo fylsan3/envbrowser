@@ -6,15 +6,34 @@ macOS 上的多环境浏览器管理工具，用于测试自有服务的浏览�
 
 需求与设计见 [`docs/需求规格-v2.html`](docs/需求规格-v2.html)。
 
+## 浏览器版本（当前唯一支持的版本）
+
+| 项目 | 值 |
+|---|---|
+| 名称 | fingerprint-chromium（adryfish，BSD-3，基于 Ungoogled Chromium） |
+| 版本 | **148.0.7778.215**，macOS arm64（Apple 芯片） |
+| 发布页 | https://github.com/adryfish/fingerprint-chromium/releases/tag/148.0.7778.215 |
+| 下载地址 | https://github.com/adryfish/fingerprint-chromium/releases/download/148.0.7778.215/ungoogled-chromium_148.0.7778.215-1.1_macos.dmg |
+| 大小 | 140,187,500 字节（约 134MB） |
+| SHA-256 | `b72f091e2e1a7583eed389c4b8e3534ed355e568af8c8bbf8fc30a25e23ca679` |
+| 安装位置 | `.toolchain/fpchromium-148/Chromium.app`（放在这里程序会自动找到） |
+
+一键下载、校验并安装：
+
+```bash
+scripts/install-browser.sh           # 校验值不一致会删除安装包并拒绝安装
+scripts/install-browser.sh --check   # 只检查已安装的版本
+```
+
 ## 仓库里有什么、没有什么
 
-仓库里**只放源码、文档和脚本**。以下内容不进仓库，需要在本机另外准备：
+仓库里**只放源码、文档和脚本**。以下内容不进仓库：
 
 | 内容 | 原因 | 怎么获得 |
 |---|---|---|
-| fingerprint-chromium 148 浏览器 | 第三方软件（BSD-3），解压后约 369MB，超过 GitHub 单文件上限 | 从 adryfish/fingerprint-chromium 的 Release 下载 macOS arm64 版，解压到 `.toolchain/fpchromium-148/Chromium.app` |
+| 浏览器 | 第三方软件，解压后约 367MB，超过 GitHub 单文件上限 | `scripts/install-browser.sh` |
 | Go 工具链 | 可从官网下载 | 放到 `.toolchain/go/`，或使用系统 Go 1.22+ |
-| 编译产物 `bin/envbrowser` | 由源码生成 | 见下方“编译” |
+| 编译好的程序 | 由源码生成 | 自己编译（见下方），或从本仓库 Releases 下载 `envbrowser-版本-macos-arm64.zip` |
 | 环境数据 `~/BrowserEnvs` | **含明文代理密码** | 程序运行时生成 |
 
 ## 模块
@@ -35,6 +54,9 @@ macOS 上的多环境浏览器管理工具，用于测试自有服务的浏览�
 export PATH=$PWD/.toolchain/go/bin:$PATH GOTOOLCHAIN=local
 go test ./cmd/... ./internal/... ./templates/...
 go build -o bin/envbrowser ./cmd/envbrowser
+
+# 打包发布（产物在 dist/，只含程序、README、文档、安装脚本）
+scripts/release.sh v0.2.0
 ```
 
 ## 使用

@@ -29,9 +29,19 @@ import (
 	"envbrowser/internal/runner"
 )
 
+// version 由 scripts/release.sh 在编译时写入。
+var version = "dev"
+
+// 本版程序开发与实测所用的浏览器，与 docs/需求规格-v2.html 第 8.0 节一致。
+const browserInfo = "fingerprint-chromium 148.0.7778.215 macOS arm64"
+
 func main() {
 	if len(os.Args) < 2 {
 		usage()
+	}
+	if os.Args[1] == "version" {
+		fmt.Printf("envbrowser（游龙）%s\n浏览器：%s\n", version, browserInfo)
+		return
 	}
 	root := os.Getenv("ENVBROWSER_ROOT")
 	if root == "" {
@@ -71,6 +81,7 @@ func usage() {
   envbrowser list
   envbrowser open env-0001
   envbrowser check -proxy URL [-exit 出口IP]
+  envbrowser version
   envbrowser settings [-chromium /path/Chromium.app] [-chromium-version 148.0.7778.215] [-test-mode=true|false]
 
 数据目录默认 ~/BrowserEnvs，可用环境变量 ENVBROWSER_ROOT 修改。`)
@@ -101,7 +112,7 @@ func create(store *config.Store, st config.Settings, args []string) {
 	proxy := fs.String("proxy", "", "主代理 URL（必填）")
 	proxy2 := fs.String("proxy2", "", "备用代理 URL（可选，只能在环境关闭时手动切换）")
 	exit := fs.String("exit", "", "指定出口 IP（默认取主代理主机）")
-	tz := fs.String("tz", "", "时区（默认 "+st.DefaultTZ+"）")
+	tz := fs.String("tz", "", "时区（默认 "+st.DefaultTZ+"）；填 auto 按出口国家自动匹配")
 	lang := fs.String("lang", "", "语言（默认按时区）")
 	user := fs.String("user", "", "账号")
 	pass := fs.String("pass", "", "账号登录密码")
@@ -118,6 +129,9 @@ func create(store *config.Store, st config.Settings, args []string) {
 		p2, err := config.ParseUpstream(*proxy2)
 		must(err)
 		in.Secondary = p2
+	}
+	if *tz == "auto" {
+		in.Timezone, in.ExitCountry = autoZone(p1)
 	}
 	if chip := config.HostChip(); chip != "" && chip != "Apple M2" {
 		fmt.Fprintf(os.Stderr, "提示: 模板与本机芯片不一致（本机 %s，模板均为 Apple M2），显卡型号会对不上\n", chip)
@@ -162,6 +176,18 @@ func check(st config.Settings, args []string) {
 	} else {
 		fmt.Println("出口校验: 通过")
 	}
+	if cc, err := egress.Country(ctx, up); err != nil {
+		fmt.Println("出口国家: 未取得 —", err)
+	} else {
+		fmt.Print("出口国家: ", cc)
+		if zs := config.ZonesForCountry(cc); len(zs) > 0 {
+			fmt.Print("，可选时区:")
+			for _, z := range zs {
+				fmt.Print(" ", z.TZ)
+			}
+		}
+		fmt.Println()
+	}
 	body, err := egress.HeaderCheck(ctx, up, st.HeaderEchoURL)
 	if err != nil {
 		fmt.Println("明文 http(80) 请求头检查: 失败 —", err)
@@ -180,7 +206,7 @@ func open(store *config.Store, st config.Settings, args []string) {
 	}
 	e, err := store.Load(args[0])
 	must(err)
-	ss, err := runner.Open(e, st, localIP(st))
+	ss, err := runner.Open(e, st, localIP(st), store.Save)
 	must(err)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
@@ -237,4 +263,27 @@ func guessChromium() string {
 		return ""
 	}
 	return filepath.Clean(p)
+}
+
+// autoZone 经代理取出口国家代码并映射时区（需求规格 8.5）。
+// 一个国家有多个候选时区或不在列表中时，打印信息并退出，让使用者用 -tz 指定。
+func autoZone(up *config.Upstream) (tz, country string) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	cc, err := egress.Country(ctx, up)
+	must(err)
+	zs := config.ZonesForCountry(cc)
+	switch len(zs) {
+	case 1:
+		fmt.Printf("出口国家 %s → 时区 %s（%s）\n", cc, zs[0].TZ, zs[0].Label)
+		return zs[0].TZ, cc
+	case 0:
+		must(fmt.Errorf("出口国家 %s 不在时区列表中，请用 -tz 手动指定", cc))
+	}
+	fmt.Fprintf(os.Stderr, "出口国家 %s 有多个时区，请用 -tz 选择其一:\n", cc)
+	for _, z := range zs {
+		fmt.Fprintf(os.Stderr, "  -tz %-22s %s\n", z.TZ, z.Label)
+	}
+	os.Exit(2)
+	return
 }

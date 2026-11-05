@@ -144,7 +144,7 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.mu.Unlock()
-	ss, err := runner.Open(e, s.Settings, s.Local)
+	ss, err := runner.Open(e, s.Settings, s.Local, s.Store.Save)
 	if err != nil {
 		http.Error(w, err.Error(), 502)
 		return

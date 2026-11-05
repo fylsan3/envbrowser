@@ -58,7 +58,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <main>
 
 <h1>游龙浏览器：需求规格 v2</h1>
-<div class="sub">产品名：<b>游龙</b>（暂定）· 更新：2026-11-05 20:30 · 运行平台：macOS（Apple 芯片）· 代码仓库：github.com/fylsan3/envbrowser · 标 <span class="tag">默认</span> 的条目为代定默认值，可直接修改</div>
+<div class="sub">产品名：<b>游龙</b>（暂定）· 更新：2026-11-05 20:40 · 运行平台：macOS（Apple 芯片）· 代码仓库：github.com/fylsan3/envbrowser · 标 <span class="tag">默认</span> 的条目为代定默认值，可直接修改</div>
 
 <div class="ok">
 <b>v2 相对 v1 的主要变化</b>
@@ -452,6 +452,21 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 
 <h2 id="s8">8. 指纹积木</h2>
 
+<h3 id="s8-0">8.0 浏览器版本与下载地址</h3>
+<p>当前程序<b>只针对下表这一个版本开发和实测</b>。浏览器不在代码仓库里，需单独下载（或运行 <code>scripts/install-browser.sh</code> 自动下载并校验）。</p>
+<table>
+<tr><th style="width:150px">项目</th><th>值</th></tr>
+<tr><td>名称</td><td>fingerprint-chromium（作者 adryfish，BSD-3 许可，基于 Ungoogled Chromium）</td></tr>
+<tr><td>版本</td><td><b>148.0.7778.215</b>（Chromium 148），macOS <b>arm64</b>（Apple 芯片）</td></tr>
+<tr><td>项目主页</td><td><code>https://github.com/adryfish/fingerprint-chromium</code></td></tr>
+<tr><td>发布页</td><td><code>https://github.com/adryfish/fingerprint-chromium/releases/tag/148.0.7778.215</code></td></tr>
+<tr><td>下载地址</td><td><code>https://github.com/adryfish/fingerprint-chromium/releases/download/148.0.7778.215/ungoogled-chromium_148.0.7778.215-1.1_macos.dmg</code></td></tr>
+<tr><td>安装包大小</td><td>140,187,500 字节（约 134MB）；解压后约 367MB</td></tr>
+<tr><td>SHA-256</td><td><code style="word-break:break-all">b72f091e2e1a7583eed389c4b8e3534ed355e568af8c8bbf8fc30a25e23ca679</code><br>（2026-11-05 下载后本机计算；安装脚本按此值校验，不一致即拒绝安装）</td></tr>
+<tr><td>安装位置</td><td><code>&lt;仓库&gt;/.toolchain/fpchromium-148/Chromium.app</code>（已被 .gitignore 忽略）；放在此处时程序自动找到，无需设置</td></tr>
+<tr><td>升级规则</td><td>换版本前先用检测页（<code>tools/fpcheck</code>）跑一遍全部积木，确认参数仍有效后，同时更新本表、安装脚本中的地址和 SHA-256、设置中的版本号</td></tr>
+</table>
+
 <h3>8.1 一致性规则（Validate 统一检查）</h3>
 <ul>
 <li>系统、UA、Client Hints、<code>navigator.platform</code>、字体集、WebGL 显卡信息必须指向<b>同一类真实设备</b>。fingerprint-chromium 只伪装成 macOS（<code>--fingerprint-platform=macos</code>），模板也只采集 Mac。</li>
@@ -532,6 +547,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <li>提供“按出口 IP 自动匹配”按钮：经该环境的代理请求 Cloudflare <code>/cdn-cgi/trace</code>，取返回中的 <code>loc=</code> 国家代码（如 <code>JP</code>），按下表映射时区和语言。<b>不需要额外安装 IP 库</b>，出口校验本来就在请求这个服务，可顺带取得。</li>
 <li>一个国家对应多个时区时（如美国 <code>US</code>），列出该国的候选时区让使用者选；不在下表中的国家只提示国家代码，不自动选择。</li>
 <li>运行中的定时复查若发现国家代码变化，与出口 IP 变化同等处理（立即断网）。</li>
+<li><b>实现方式（已完成）：</b>国家代码记录在 <code>env.json</code> 的 <code>proxy.exit_country</code>。新建时用 <code>-tz auto</code> 自动匹配则当场记录；否则在<b>第一次打开</b>时记录。之后每次打开先比对，不同则不启动；运行中复查轮到 Cloudflare 时比对，不同立即断网。Cloudflare 暂时取不到时不阻止启动（出口 IP 校验仍照常进行），复查时再补记。</li>
 <li>出口 IP 归属地与所选时区明显不符时，在页面提示，不强制拦截。</li>
 </ul>
 <table>
@@ -700,7 +716,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <table>
 <tr><th style="width:56px">阶段</th><th style="width:200px">内容</th><th>验收标准</th><th style="width:90px">状态</th></tr>
 <tr><td>1</td><td>核心层 + 网络积木 + 命令行</td><td>socks5h 与 http 均能带用户名密码连通、认证错误即断；上游不可用时不直连；本机与内网地址被拒；测试模式只放行一个地址；断网后现有连接全部切断；UDP 被拒；出口校验不通过不启动浏览器；环境锁与残留锁清除</td><td><span class="p1">已完成</span><br>单元测试 13 项通过</td></tr>
-<tr><td>1.4</td><td>代码接入 fingerprint-chromium + 孤儿浏览器修复</td><td>配置升到版本 2、v1 自动迁移并留备份；内置 4 套模板轮换、种子各环境不重复；启动参数按第 8.2 / 8.3 节生成，时区改用 <code>--timezone</code>；6.1 节的孤儿清理与端口冷却</td><td><span class="p1">已完成</span><br>2026-11-05 单元测试 24 项通过</td></tr>
+<tr><td>1.4</td><td>代码接入 fingerprint-chromium + 孤儿浏览器修复</td><td>配置升到版本 2、v1 自动迁移并留备份；内置 4 套模板轮换、种子各环境不重复；启动参数按第 8.2 / 8.3 节生成，时区改用 <code>--timezone</code>；6.1 节的孤儿清理与端口冷却；8.5 节按出口国家匹配时区；8.0 节浏览器安装脚本（SHA-256 校验）</td><td><span class="p1">已完成</span><br>2026-11-05 单元测试 27 项通过</td></tr>
 <tr><td>1.5</td><td>接入 fingerprint-chromium + 真实代理实测</td><td>用真实代理打开 2 个样本环境：出口 IP 与录入值一致；<b>http 上游访问明文 http（80 端口）网站正常</b>；断掉上游后页面打不开；<b>按第 12.1 节方法确认零直连、本机无 DNS 查询</b>；两个环境 Cookie 互不可见</td><td>下一步</td></tr>
 <tr><td>2</td><td>检测页 + 指纹积木验证</td><td>第 8.2 节“待验证”项全部确认；时区、语言、UA、核数与配置一致；主页面 / iframe / Worker 一致；重启 3 次结果不变；任意两个环境 Canvas、音频哈希不同；测试模式开关行为正确；本机端口扫描测试中所有端口表现一致</td><td></td></tr>
 <tr><td>3</td><td>多环境并行 + 模板</td><td>同时打开 5 个环境、各走各的代理；任意关掉一个代理只影响对应环境；内置模板加载正常，新建环境轮换模板</td><td></td></tr>

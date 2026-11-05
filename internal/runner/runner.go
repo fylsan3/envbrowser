@@ -71,7 +71,8 @@ func (m multiWriter) Write(p []byte) (int, error) {
 }
 
 // Open 打开一个环境。成功返回时浏览器已启动；浏览器退出后 Done() 关闭。
-func Open(e *config.Env, st config.Settings, local net.IP) (*Session, error) {
+// save 用于把首次取得的出口国家写回 env.json；可为 nil。
+func Open(e *config.Env, st config.Settings, local net.IP, save func(*config.Env) error) (*Session, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -126,6 +127,24 @@ func Open(e *config.Env, st config.Settings, local net.IP) (*Session, error) {
 	s.lastIP = res.ExitIP.String()
 	s.Logf("出口校验通过: %s（%s）", res.ExitIP, res.Service)
 
+	// 出口国家：经 Cloudflare 取 loc=。已记录过且不同 → 不启动；首次 → 记录。
+	// 取不到（Cloudflare 不可用）时不阻止启动，由运行中复查补记。
+	cctx, ccancel := context.WithTimeout(context.Background(), 20*time.Second)
+	cc, cerr := egress.Country(cctx, up)
+	ccancel()
+	switch {
+	case cerr != nil:
+		s.Logf("未取得出口国家代码（不影响启动，复查时再取）: %v", cerr)
+	case egress.CheckCountry(e.Proxy.ExitCountry, cc) != nil:
+		return fail(fmt.Errorf("出口校验未通过，不启动浏览器: %w", egress.CheckCountry(e.Proxy.ExitCountry, cc)))
+	default:
+		s.Logf("出口国家 %s", cc)
+		recordCountry(e, cc, save, s.Logf)
+	}
+	if want := config.CountryOfZone(e.Fingerprint.Timezone); want != "" && e.Proxy.ExitCountry != "" && want != e.Proxy.ExitCountry {
+		s.Logf("提示: 时区 %s 属于 %s，与出口国家 %s 不符（不拦截）", e.Fingerprint.Timezone, want, e.Proxy.ExitCountry)
+	}
+
 	cmd, err := launcher.Start(st.ChromiumPath, e, r.Port())
 	if err != nil {
 		return fail(err)
@@ -140,7 +159,9 @@ func Open(e *config.Env, st config.Settings, local net.IP) (*Session, error) {
 	s.cancel = mcancel
 	mon := &egress.Monitor{
 		Upstream: up, Expected: e.Proxy.ExitIP, Local: local, Services: st.EchoServices,
-		MinSec: st.RecheckMinSec, MaxSec: st.RecheckMaxSec, FailMax: st.RecheckFailMax,
+		Country:   e.Proxy.ExitCountry,
+		OnCountry: func(cc string) { recordCountry(e, cc, save, s.Logf) },
+		MinSec:    st.RecheckMinSec, MaxSec: st.RecheckMaxSec, FailMax: st.RecheckFailMax,
 		Logf: s.Logf,
 		OnOK: func(res egress.Result) {
 			s.mu.Lock()
@@ -190,6 +211,19 @@ func (s *Session) Close() {
 	select {
 	case <-s.done:
 	case <-time.After(10 * time.Second):
+	}
+}
+
+// recordCountry 首次记录出口国家并保存。已有值时不覆盖（变化由校验负责断网）。
+func recordCountry(e *config.Env, cc string, save func(*config.Env) error, logf func(string, ...any)) {
+	if e.Proxy.ExitCountry != "" || cc == "" {
+		return
+	}
+	e.Proxy.ExitCountry = cc
+	if save != nil {
+		if err := save(e); err != nil {
+			logf("警告: 保存出口国家失败: %v", err)
+		}
 	}
 }
 

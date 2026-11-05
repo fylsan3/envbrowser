@@ -41,3 +41,26 @@ func TestMismatchIsDistinct(t *testing.T) {
 		t.Fatal()
 	}
 }
+
+func TestParseTraceCountry(t *testing.T) {
+	cases := map[string]string{
+		"fl=1\nip=203.0.113.7\nloc=JP\ntls=TLSv1.3\n": "JP",
+		"ip=203.0.113.7\nloc=us\n":                    "US",
+		"ip=203.0.113.7\nloc=XX\n":                    "",
+		"203.0.113.7\n":                               "",
+	}
+	for in, want := range cases {
+		if got := parseTrace(in); got != want {
+			t.Errorf("parseTrace(%q)=%q want %q", in, got, want)
+		}
+	}
+}
+
+func TestCheckCountry(t *testing.T) {
+	if CheckCountry("JP", "JP") != nil || CheckCountry("", "US") != nil || CheckCountry("JP", "") != nil {
+		t.Error("相同或未知时不应报错")
+	}
+	if err := CheckCountry("JP", "US"); !errors.Is(err, ErrMismatch) {
+		t.Error("国家变化应视为出口不符（立即断网）")
+	}
+}

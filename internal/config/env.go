@@ -45,6 +45,9 @@ type ProxyConfig struct {
 	Secondary *Upstream `json:"secondary,omitempty"`
 	Active    string    `json:"active"`  // "primary" | "secondary"，只能在环境关闭时修改
 	ExitIP    string    `json:"exit_ip"` // 指定出口 IP，实际出口必须与之相同
+	// ExitCountry 出口国家代码（Cloudflare trace 的 loc=）。为空表示尚未记录，首次校验时写入；
+	// 之后运行中发现变化即断网。
+	ExitCountry string `json:"exit_country,omitempty"`
 }
 
 // Upstream 上游代理。socks5h 与 http 都必须带用户名密码。

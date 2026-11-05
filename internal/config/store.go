@@ -246,9 +246,11 @@ type NewEnvInput struct {
 	Primary   *Upstream
 	Secondary *Upstream
 	ExitIP    string // 为空时取主代理地址
-	Timezone  string
-	Language  string // 为空时按时区默认
-	Window    Window
+	// ExitCountry 已知的出口国家代码（自动匹配时区时取得），为空则首次打开时记录
+	ExitCountry string
+	Timezone    string
+	Language    string // 为空时按时区默认
+	Window      Window
 }
 
 func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
@@ -291,7 +293,7 @@ func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
 		Name:          name,
 		CreatedAt:     time.Now().Truncate(time.Second),
 		Account:       in.Account,
-		Proxy:         ProxyConfig{Primary: in.Primary, Secondary: in.Secondary, Active: "primary", ExitIP: exit},
+		Proxy:         ProxyConfig{Primary: in.Primary, Secondary: in.Secondary, Active: "primary", ExitIP: exit, ExitCountry: in.ExitCountry},
 		Fingerprint: Fingerprint{
 			Template:            t.Name,
 			Seed:                NewSeed(w, used.seeds),
