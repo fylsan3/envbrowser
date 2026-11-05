@@ -3,10 +3,10 @@ package config
 
 import (
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math/big"
 	"net"
 	"net/url"
 	"os"
@@ -16,7 +16,8 @@ import (
 	"time"
 )
 
-const SchemaVersion = 1
+// SchemaVersion 2：底座换为 fingerprint-chromium，种子改为一个整数，新增模板字段。
+const SchemaVersion = 2
 
 // Env 一个环境 = 一个账号 = 一套设备指纹 = 一条代理。全部信息存在同一个 env.json。
 type Env struct {
@@ -56,19 +57,23 @@ type Upstream struct {
 }
 
 type Fingerprint struct {
-	Template  string   `json:"template,omitempty"`
-	Seed      Seed     `json:"seed"`
-	Timezone  string   `json:"timezone"`
-	Languages []string `json:"languages"`
+	Template            string   `json:"template,omitempty"`
+	Seed                Seed     `json:"seed"`
+	PlatformVersion     string   `json:"platform_version"`     // 来自模板，--fingerprint-platform-version
+	HardwareConcurrency int      `json:"hardware_concurrency"` // 来自模板，--fingerprint-hardware-concurrency
+	Timezone            string   `json:"timezone"`
+	Languages           []string `json:"languages"`
 }
 
-// Seed 由程序生成，与环境永久绑定。阶段一只有窗口尺寸生效，其余项待内核积木。
+// Seed 由程序生成，与环境永久绑定。
+// Fingerprint 传给 --fingerprint，决定 Canvas、音频、WebGL 图像、内存、ClientRects 等扰动。
 type Seed struct {
-	CanvasNoise    string `json:"canvas_noise"`
-	AudioNoise     string `json:"audio_noise"`
-	MediaDeviceIDs string `json:"media_device_ids"`
-	Window         Window `json:"window"`
+	Fingerprint int64  `json:"fingerprint"` // 1 .. 2^31-1，各环境不重复
+	Window      Window `json:"window"`
 }
+
+// MaxSeed fingerprint-chromium 的 --fingerprint 取 int32。
+const MaxSeed = 1<<31 - 1
 
 type Window struct {
 	Width  int `json:"width"`
@@ -160,20 +165,24 @@ func (e *Env) Validate() error {
 	if _, err := time.LoadLocation(e.Fingerprint.Timezone); err != nil {
 		return fmt.Errorf("时区无效: %q", e.Fingerprint.Timezone)
 	}
+	if s := e.Fingerprint.Seed.Fingerprint; s < 1 || s > MaxSeed {
+		return fmt.Errorf("指纹种子超出范围 1..%d: %d", MaxSeed, s)
+	}
 	return nil
 }
 
-// NewSeed 生成随机种子。
-func NewSeed(w Window) Seed {
-	return Seed{CanvasNoise: randHex(16), AudioNoise: randHex(16), MediaDeviceIDs: randHex(16), Window: w}
-}
-
-func randHex(n int) string {
-	b := make([]byte, n)
-	if _, err := rand.Read(b); err != nil {
-		panic(err)
+// NewSeed 生成随机种子，避开 used 中已被其他环境占用的值。
+func NewSeed(w Window, used map[int64]bool) Seed {
+	for {
+		n, err := rand.Int(rand.Reader, big.NewInt(MaxSeed))
+		if err != nil {
+			panic(err)
+		}
+		v := n.Int64() + 1 // 1 .. MaxSeed
+		if !used[v] {
+			return Seed{Fingerprint: v, Window: w}
+		}
 	}
-	return hex.EncodeToString(b)
 }
 
 // writeJSONAtomic 先写临时文件再改名，避免写一半损坏。

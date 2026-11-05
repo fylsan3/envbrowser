@@ -27,7 +27,7 @@ type Settings struct {
 	TestMode       bool     `json:"test_mode"`        // 测试模式，默认关
 	TestTarget     string   `json:"test_target"`      // 测试模式下唯一放行的本机地址
 	MemoryWarnN    int      `json:"memory_warn_n"`
-	PFEnabled      bool     `json:"pf_enabled"` // pf 防火墙开关，默认关；阶段一未实现
+	PFEnabled      bool     `json:"pf_enabled"` // pf 防火墙开关，默认关；暂未排入实施阶段
 	DefaultTZ      string   `json:"default_timezone"`
 }
 
@@ -49,6 +49,7 @@ func DefaultSettings() Settings {
 		TestTarget:    "127.0.0.1:9000",
 		MemoryWarnN:   10,
 		DefaultTZ:     "Asia/Tokyo",
+		ChromiumVer:   "148.0.7778.215",
 	}
 }
 
@@ -111,12 +112,86 @@ func (s *Store) Load(id string) (*Env, error) {
 	if err := json.Unmarshal(data, &e); err != nil {
 		return nil, fmt.Errorf("%s/env.json 格式错误: %w", id, err)
 	}
-	if e.SchemaVersion != SchemaVersion {
+	e.dir = filepath.Join(s.Root, id)
+	switch e.SchemaVersion {
+	case SchemaVersion:
+	case 1:
+		if err := s.migrateV1(&e, data); err != nil {
+			return nil, fmt.Errorf("%s: 从版本 1 迁移失败: %w", id, err)
+		}
+	default:
 		return nil, fmt.Errorf("%s: 不支持的配置版本 %d", id, e.SchemaVersion)
 	}
-	e.dir = filepath.Join(s.Root, id)
 	return &e, nil
 }
+
+// migrateV1 把 v1 环境升级到 v2：备份原文件，选模板、重新生成种子、换新积木表。
+// v1 的 canvas_noise 等字段在 fingerprint-chromium 下无对应参数，直接丢弃。
+func (s *Store) migrateV1(e *Env, raw []byte) error {
+	bak := filepath.Join(e.dir, "env.v1.json.bak")
+	if _, err := os.Stat(bak); errors.Is(err, os.ErrNotExist) {
+		if err := os.WriteFile(bak, raw, 0o600); err != nil {
+			return err
+		}
+	}
+	ts, err := s.Templates()
+	if err != nil {
+		return err
+	}
+	used := s.usage()
+	t, err := pickTemplate(ts, used.templates)
+	if err != nil {
+		return err
+	}
+	e.SchemaVersion = SchemaVersion
+	e.Fingerprint.Template = t.Name
+	e.Fingerprint.PlatformVersion = t.PlatformVersion
+	e.Fingerprint.HardwareConcurrency = t.HardwareConcurrency
+	e.Fingerprint.Seed = NewSeed(e.Fingerprint.Seed.Window, used.seeds)
+	// v1 阶段一已生效的开关保留使用者的值，其余用 v2 默认值。
+	m := DefaultModules()
+	for _, k := range []string{"isolation", "network_guard", "timezone", "language", "window", "webrtc"} {
+		if v, ok := e.Modules[k]; ok {
+			m[k] = v
+		}
+	}
+	e.Modules = m
+	return s.Save(e)
+}
+
+type usage struct {
+	templates map[string]int
+	seeds     map[int64]bool
+}
+
+// usage 直接读各环境 env.json 的种子和模板，不经过 Load（避免迁移时递归）。
+func (s *Store) usage() usage {
+	u := usage{templates: map[string]int{}, seeds: map[int64]bool{}}
+	entries, _ := os.ReadDir(s.Root)
+	for _, en := range entries {
+		if !en.IsDir() || !idRe.MatchString(en.Name()) {
+			continue
+		}
+		data, err := os.ReadFile(s.envPath(en.Name()))
+		if err != nil {
+			continue
+		}
+		var e Env
+		if json.Unmarshal(data, &e) != nil {
+			continue
+		}
+		if e.Fingerprint.Template != "" {
+			u.templates[e.Fingerprint.Template]++
+		}
+		if e.Fingerprint.Seed.Fingerprint > 0 {
+			u.seeds[e.Fingerprint.Seed.Fingerprint] = true
+		}
+	}
+	return u
+}
+
+// TemplateUsage 每个模板被几个环境使用。
+func (s *Store) TemplateUsage() map[string]int { return s.usage().templates }
 
 func (s *Store) Save(e *Env) error {
 	if e.dir == "" {
@@ -201,6 +276,15 @@ func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
 	if name == "" {
 		name = id
 	}
+	ts, err := s.Templates()
+	if err != nil {
+		return nil, err
+	}
+	used := s.usage()
+	t, err := pickTemplate(ts, used.templates)
+	if err != nil {
+		return nil, err
+	}
 	e := &Env{
 		SchemaVersion: SchemaVersion,
 		ID:            id,
@@ -209,9 +293,12 @@ func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
 		Account:       in.Account,
 		Proxy:         ProxyConfig{Primary: in.Primary, Secondary: in.Secondary, Active: "primary", ExitIP: exit},
 		Fingerprint: Fingerprint{
-			Seed:      NewSeed(w),
-			Timezone:  tz,
-			Languages: SplitLang(lang),
+			Template:            t.Name,
+			Seed:                NewSeed(w, used.seeds),
+			PlatformVersion:     t.PlatformVersion,
+			HardwareConcurrency: t.HardwareConcurrency,
+			Timezone:            tz,
+			Languages:           SplitLang(lang),
 		},
 		Modules:         DefaultModules(),
 		ChromiumVersion: st.ChromiumVer,
@@ -222,12 +309,14 @@ func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
 	return e, s.Save(e)
 }
 
-// DefaultModules 阶段一可用的积木默认开，阶段二积木默认关。
+// DefaultModules v2 积木默认值。值为 false 的指纹积木会进入 --disable-spoofing。
+// gpu 默认 false：显卡显示真机型号（D24）。
 func DefaultModules() map[string]bool {
 	return map[string]bool{
-		"isolation": true, "network_guard": true, "timezone": true, "language": true,
-		"window": true, "webrtc": true,
-		"ua_client_hints": false, "hardware": false, "canvas": false, "webgl": false,
-		"audio": false, "fonts": false, "media_devices": false, "speech": false,
+		"isolation": true, "network_guard": true, "fingerprint": true,
+		"timezone": true, "language": true, "window": true, "webrtc": true,
+		"ua_client_hints": true, "hardware": true,
+		"canvas": true, "audio": true, "fonts": true, "clientrects": true,
+		"gpu": false,
 	}
 }

@@ -1,4 +1,4 @@
-// envbrowser 主程序。
+// envbrowser 主程序（游龙）。浏览器底座为 fingerprint-chromium。
 //
 //	envbrowser serve                       启动管理页面（127.0.0.1:8800）
 //	envbrowser create -proxy URL [...]     新建环境
@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"os/signal"
+	"path/filepath"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -24,6 +25,7 @@ import (
 	"envbrowser/internal/admin"
 	"envbrowser/internal/config"
 	"envbrowser/internal/egress"
+	"envbrowser/internal/launcher"
 	"envbrowser/internal/runner"
 )
 
@@ -39,6 +41,9 @@ func main() {
 	must(err)
 	st, err := store.LoadSettings()
 	must(err)
+	if st.ChromiumPath == "" {
+		st.ChromiumPath = guessChromium()
+	}
 
 	cmd, args := os.Args[1], os.Args[2:]
 	switch cmd {
@@ -66,7 +71,7 @@ func usage() {
   envbrowser list
   envbrowser open env-0001
   envbrowser check -proxy URL [-exit 出口IP]
-  envbrowser settings [-chromium /path/Chromium.app] [-chromium-version 159.0.8145.0] [-test-mode=true|false]
+  envbrowser settings [-chromium /path/Chromium.app] [-chromium-version 148.0.7778.215] [-test-mode=true|false]
 
 数据目录默认 ~/BrowserEnvs，可用环境变量 ENVBROWSER_ROOT 修改。`)
 	os.Exit(2)
@@ -114,9 +119,12 @@ func create(store *config.Store, st config.Settings, args []string) {
 		must(err)
 		in.Secondary = p2
 	}
+	if chip := config.HostChip(); chip != "" && chip != "Apple M2" {
+		fmt.Fprintf(os.Stderr, "提示: 模板与本机芯片不一致（本机 %s，模板均为 Apple M2），显卡型号会对不上\n", chip)
+	}
 	e, err := store.Create(in, st)
 	must(err)
-	fmt.Printf("已创建 %s（%s）出口 %s 时区 %s\n", e.ID, e.Name, e.Proxy.ExitIP, e.Fingerprint.Timezone)
+	fmt.Printf("已创建 %s（%s）出口 %s 时区 %s 模板 %s\n", e.ID, e.Name, e.Proxy.ExitIP, e.Fingerprint.Timezone, e.Fingerprint.Template)
 }
 
 func list(store *config.Store) {
@@ -184,6 +192,12 @@ func open(store *config.Store, st config.Settings, args []string) {
 }
 
 func serve(store *config.Store, st config.Settings) {
+	// 主程序启动时清理上次异常退出残留的浏览器，防止它们连到新分配的中转端口上串号。
+	killed, err := launcher.KillOrphans(store.Root)
+	for _, o := range killed {
+		fmt.Printf("已结束残留浏览器 %s PID %d\n", o.EnvID, o.PID)
+	}
+	must(err)
 	srv := admin.New(store, st, localIP(st))
 	ln, err := net.Listen("tcp", st.AdminAddr)
 	must(err)
@@ -208,4 +222,19 @@ func settings(store *config.Store, st config.Settings, args []string) {
 	st.ChromiumPath, st.ChromiumVer, st.TestMode = *chromium, *ver, *test
 	must(store.SaveSettings(st))
 	fmt.Printf("已保存: chromium=%s version=%s test_mode=%v\n", st.ChromiumPath, st.ChromiumVer, st.TestMode)
+}
+
+// guessChromium 未设置浏览器路径时，按仓库布局查找 <仓库>/.toolchain/fpchromium-148/Chromium.app
+// （程序位于 <仓库>/bin/envbrowser）。找不到时返回空，启动时会报错。
+func guessChromium() string {
+	exe, err := os.Executable()
+	if err != nil {
+		return ""
+	}
+	exe, _ = filepath.EvalSymlinks(exe)
+	p := filepath.Join(filepath.Dir(exe), "..", ".toolchain", "fpchromium-148", "Chromium.app")
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	return filepath.Clean(p)
 }

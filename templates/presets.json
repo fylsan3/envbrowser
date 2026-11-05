@@ -1,0 +1,46 @@
+{
+  "_说明": "游龙内置 macOS 模板。硬件参数来自 Apple 官方技术规格页（support.apple.com），均为 M2 芯片、8 核 CPU，与运行本程序的 Mac（M2）一致。网页读不到机型，模板实际生效的只有 platform_version 与 hardware_concurrency；机型与屏幕仅作记录。系统版本取自 Apple 安全更新页（support.apple.com/100100）上 2026-09 至 2026-10 发布的正式版。",
+  "_查询日期": "2026-11-05",
+  "templates": [
+    {
+      "name": "macbook-air-13-m2-2022",
+      "model": "MacBook Air (M2, 2022)",
+      "source": "https://support.apple.com/111867",
+      "chip": "Apple M2",
+      "hardware_concurrency": 8,
+      "builtin_display": "2560x1664",
+      "platform_version": "26.7.2",
+      "enabled": true
+    },
+    {
+      "name": "macbook-air-15-m2-2023",
+      "model": "MacBook Air (15-inch, M2, 2023)",
+      "source": "https://support.apple.com/111346",
+      "chip": "Apple M2",
+      "hardware_concurrency": 8,
+      "builtin_display": "2880x1864",
+      "platform_version": "27.2.0",
+      "enabled": true
+    },
+    {
+      "name": "macbook-pro-13-m2-2022",
+      "model": "MacBook Pro (13-inch, M2, 2022)",
+      "source": "https://support.apple.com/111869",
+      "chip": "Apple M2",
+      "hardware_concurrency": 8,
+      "builtin_display": "2560x1600",
+      "platform_version": "27.0.1",
+      "enabled": true
+    },
+    {
+      "name": "mac-mini-m2-2023",
+      "model": "Mac mini (2023, M2)",
+      "source": "https://support.apple.com/111837",
+      "chip": "Apple M2",
+      "hardware_concurrency": 8,
+      "builtin_display": null,
+      "platform_version": "26.7.1",
+      "enabled": true
+    }
+  ]
+}

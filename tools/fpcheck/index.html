@@ -1,0 +1,27 @@
+<!doctype html><meta charset="utf-8"><title>fp</title>
+<pre id="o">running</pre>
+<script>
+async function sha(s){const b=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(s));return [...new Uint8Array(b)].slice(0,8).map(x=>x.toString(16).padStart(2,'0')).join('')}
+(async()=>{
+const r={};
+r.ua=navigator.userAgent; r.platform=navigator.platform;
+r.uaData=navigator.userAgentData?JSON.stringify(await navigator.userAgentData.getHighEntropyValues(['platform','platformVersion','architecture','model','fullVersionList'])):null;
+r.cores=navigator.hardwareConcurrency; r.mem=navigator.deviceMemory;
+r.lang=navigator.language; r.langs=navigator.languages.join(',');
+r.tz=Intl.DateTimeFormat().resolvedOptions().timeZone; r.tzOffset=new Date().getTimezoneOffset();
+r.screen=[screen.width,screen.height,screen.colorDepth,devicePixelRatio].join('x');
+r.webdriver=navigator.webdriver;
+const c=document.createElement('canvas');c.width=240;c.height=60;const x=c.getContext('2d');
+x.textBaseline='top';x.font='16px Arial';x.fillStyle='#f60';x.fillRect(10,10,100,30);x.fillStyle='#069';x.fillText('envbrowser 指纹 😃',4,20);
+r.canvas=await sha(c.toDataURL());
+try{const g=document.createElement('canvas').getContext('webgl');const d=g.getExtension('WEBGL_debug_renderer_info');
+r.glVendor=d?g.getParameter(d.UNMASKED_VENDOR_WEBGL):null;r.glRenderer=d?g.getParameter(d.UNMASKED_RENDERER_WEBGL):null;
+g.clearColor(0.2,0.4,0.6,1);g.clear(g.COLOR_BUFFER_BIT);const px=new Uint8Array(4);g.readPixels(0,0,1,1,g.RGBA,g.UNSIGNED_BYTE,px);r.glPixel=px.join(',');}catch(e){r.gl='err '+e}
+try{const a=new OfflineAudioContext(1,5000,44100);const o=a.createOscillator();o.type='triangle';o.frequency.value=1e4;const cp=a.createDynamicsCompressor();o.connect(cp);cp.connect(a.destination);o.start(0);const b=await a.startRendering();let s=0;for(const v of b.getChannelData(0).slice(4500))s+=Math.abs(v);r.audio=s.toFixed(10);}catch(e){r.audio='err '+e}
+const fonts=['Arial','Helvetica Neue','Menlo','PingFang SC','Hiragino Sans','Songti SC','Avenir','Futura','Gill Sans','Monaco','Courier New','Times New Roman','Verdana','Tahoma','Segoe UI','Calibri','Microsoft YaHei','SimSun','Ubuntu','DejaVu Sans'];
+r.fonts=fonts.filter(f=>document.fonts.check('12px "'+f+'"')).join(',');
+const sp=document.createElement('span');sp.style.font='20px Menlo';sp.textContent='mmmmmmmmmmlli';document.body.appendChild(sp);r.rect=sp.getBoundingClientRect().width.toFixed(6);
+try{const w=new Worker(URL.createObjectURL(new Blob(['postMessage([navigator.userAgent,navigator.hardwareConcurrency,Intl.DateTimeFormat().resolvedOptions().timeZone].join("|"))'])));r.worker=await new Promise(res=>{w.onmessage=e=>res(e.data)});}catch(e){r.worker='err '+e}
+document.getElementById('o').textContent='FPJSON'+JSON.stringify(r)+'FPEND';
+})();
+</script>

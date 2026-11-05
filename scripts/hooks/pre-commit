@@ -1,0 +1,3 @@
+#!/bin/bash
+# 提交前：检查暂存区新增内容。
+exec "$(git rev-parse --show-toplevel)/scripts/hooks/secret-scan.sh" staged

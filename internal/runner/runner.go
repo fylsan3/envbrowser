@@ -95,6 +95,16 @@ func Open(e *config.Env, st config.Settings, local net.IP) (*Session, error) {
 		return nil, err
 	}
 
+	// 先结束所有孤儿浏览器（主程序异常退出后残留的），再分配中转端口，
+	// 避免孤儿浏览器连上新分配给别的环境的端口而串号。
+	if killed, err := launcher.KillOrphans(filepath.Dir(e.Dir())); err != nil {
+		return fail(fmt.Errorf("清理残留浏览器失败，为防串号不启动: %w", err))
+	} else {
+		for _, o := range killed {
+			s.Logf("已结束残留浏览器 %s PID %d", o.EnvID, o.PID)
+		}
+	}
+
 	r, err := relay.Start(e.ID, *up, st.PortMin, st.PortMax, s.Logf)
 	if err != nil {
 		return fail(err)
@@ -119,6 +129,9 @@ func Open(e *config.Env, st config.Settings, local net.IP) (*Session, error) {
 	cmd, err := launcher.Start(st.ChromiumPath, e, r.Port())
 	if err != nil {
 		return fail(err)
+	}
+	if err := lock.SetBrowserPID(cmd.Process.Pid); err != nil {
+		s.Logf("警告: 写入浏览器 PID 失败: %v", err)
 	}
 	s.setStatus("running", "")
 	s.Logf("Chromium 已启动 PID %d", cmd.Process.Pid)

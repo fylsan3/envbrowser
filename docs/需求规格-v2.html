@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>浏览器项目：需求规格 v1</title>
+<title>游龙浏览器：需求规格 v2</title>
 <style>
 :root{--fg:#1f2328;--muted:#5f6368;--line:#d0d7de;--bg2:#f6f8fa;--blue:#185FA5;--blue-bg:#E6F1FB;--teal:#0F6E56;--teal-bg:#E1F5EE;--amber:#854F0B;--amber-bg:#FAEEDA;--red:#A32D2D;--red-bg:#FCEBEB}
 *{box-sizing:border-box}
@@ -57,8 +57,24 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 </nav>
 <main>
 
-<h1>浏览器项目：需求规格 v1</h1>
-<div class="sub">更新：2026-11-05 17:10（第 3 版：本机隔离、检测页与测试模式、管理页面令牌、公共回显服务轮换） · 运行平台：macOS · 基于《需求与设计草案.md》整理（草案原文未改动）· 标 <span class="tag">默认</span> 的条目为代定默认值，可直接修改</div>
+<h1>游龙浏览器：需求规格 v2</h1>
+<div class="sub">产品名：<b>游龙</b>（暂定）· 更新：2026-11-05 20:30 · 运行平台：macOS（Apple 芯片）· 代码仓库：github.com/fylsan3/envbrowser · 标 <span class="tag">默认</span> 的条目为代定默认值，可直接修改</div>
+
+<div class="ok">
+<b>v2 相对 v1 的主要变化</b>
+<ul style="margin:6px 0">
+<li><b>浏览器底座改为 fingerprint-chromium 148</b>（开源、Apple 芯片原生，已在本机实测）。原“自编译 Chromium 内核”阶段取消，不再需要 100GB 磁盘和数小时编译。</li>
+<li>指纹差异化从“阶段 5 才有”提前到<b>阶段 2 即可实现</b>：Canvas、音频、WebGL 图像、内存等按种子变化。</li>
+<li>时区改用 <code>--timezone</code> 参数（已实测生效，替代 v1 待实测的 <code>TZ</code>）；语言改用 <code>--lang</code>/<code>--accept-lang</code>（已实测）。</li>
+<li>CPU 核数<b>取模板值</b>、显卡<b>显示本机真机型号</b>；浏览器品牌设为 <b>Chrome</b>（D22–D24）。</li>
+<li>种子新增固定的 <code>fingerprint</code> 整数；<code>env.json</code> 升级到 <code>schema_version 2</code>。</li>
+<li>实施阶段由 6 个调整为 5 个；阶段 1 已完成并标注实际结果（第 12 节）。</li>
+<li>代理认证方案按新浏览器重新评估，结论为<b>保留本地中转</b>（第 5.1 节）。</li>
+<li>模板改为按 Apple 官网技术规格内置 4 套，取消采集脚本（第 8.4 节）；时区自动匹配改用 Cloudflare 回显自带的国家代码，不再使用 GeoLite2（第 8.5 节）。</li>
+<li>新增“零直连”实测方法（第 12.1 节）和提交前自动检查（第 13 节）。</li>
+<li>新增主程序崩溃后<b>孤儿浏览器防串号</b>措施：锁文件记录浏览器 PID、启动前清理孤儿、端口 60 秒冷却（第 6.1 节）；代码已按 v2 改完（第 12 节阶段 1.4）。</li>
+</ul>
+</div>
 
 <!-- ============ 0 ============ -->
 <h2 id="s0">0. 目标与范围</h2>
@@ -84,7 +100,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <ul style="margin:6px 0">
 <li>禁用或清空指纹本身就是异常特征。本项目的做法是给每个环境一套<b>像真机、前后自洽、长期稳定</b>的值。</li>
 <li>验收以本地检测页和公开检测页的结果为准，不承诺任何检测方案都无法识别。</li>
-<li>在同一台 Mac 上只用启动参数时，所有环境的 Canvas、WebGL、音频指纹相同。要让每个环境指纹不同，必须完成第二阶段的内核积木。</li>
+<li>指纹差异由 fingerprint-chromium 的种子机制实现（Canvas、音频、WebGL 图像等）。按 D23/D24 的选择，<b>CPU 核数取模板值、显卡显示本机真机型号</b>，所以用同一个模板的环境这两项会相同，差异来自种子项和不同模板（见第 8.4 节）。</li>
 </ul>
 </div>
 
@@ -125,25 +141,29 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <tr><th style="width:44px">#</th><th style="width:150px">事项</th><th>决定</th><th style="width:230px">来源 / 理由</th></tr>
 <tr><td>D1</td><td>对应关系</td><td>环境 = 账号 = 设备指纹 = 代理，严格一对一</td><td>已确认</td></tr>
 <tr><td>D2</td><td>代理协议</td><td>socks5h 与 http 均带用户名密码认证；两者都配置时优先 socks5h</td><td>已确认</td></tr>
-<tr><td>D3</td><td>认证实现</td><td>主程序内置<b>本地中转模块</b>完成认证；浏览器只连本机端口</td><td>不装插件、不改内核，两种协议统一处理</td></tr>
+<tr><td>D3</td><td>认证实现</td><td>主程序内置<b>本地中转模块</b>完成认证；浏览器只连本机端口</td><td>不装插件；fingerprint-chromium 同样不支持代理密码，由中转补上；两种协议统一处理</td></tr>
 <tr><td>D4</td><td>多环境同时打开</td><td>支持。每个打开的环境独占一个本地端口，对应自己的上游代理</td><td>已确认需求，见第 6 节</td></tr>
 <tr><td>D5</td><td>插件</td><td>不使用任何浏览器插件</td><td>已确认；插件本身可被检测</td></tr>
 <tr><td>D6</td><td>信息存放</td><td>账号、代理及密码与环境配置存在同一目录；管理页面可见可改</td><td>已确认</td></tr>
-<tr><td>D7</td><td>出口 IP 校验</td><td>不做跨环境查重。实际出口 IP 必须<b>等于该环境录入的指定出口 IP</b>，且<b>不等于本机真实 IP</b>，否则不启动 / 立即断网</td><td>已确认（审核第 8 条）</td></tr>
+<tr><td>D7</td><td>出口 IP 校验</td><td>不做跨环境查重。实际出口 IP 必须<b>等于该环境录入的指定出口 IP</b>，且<b>不等于本机真实 IP</b>，否则不启动 / 立即断网</td><td>已确认（审核第 8 条）；使用者确认代理均为<b>固定 IP</b>，规则不变</td></tr>
 <tr><td>D8</td><td>技术栈</td><td><span class="tag">默认</span>Go 编写单个主程序：控制服务 + 本地中转 + 本地管理网页</td><td>单文件部署，并发代理性能好</td></tr>
-<tr><td>D9</td><td>浏览器</td><td>阶段一用<b>普通 Chromium 固定版本</b>（不用 Chrome for Testing，它会显示“仅用于自动化测试”提示）；阶段二换自编译 Chromium</td><td>版本锁定才能保证结果可重复</td></tr>
-<tr><td>D10</td><td>模板与种子</td><td>使用者提供 2–3 套 macOS 真机<b>模板</b>（脚本采集）；新建环境时程序轮换选模板，自动生成该环境的<b>种子</b>并永久绑定（见第 8.4 节）</td><td>已确认</td></tr>
-<tr><td>D11</td><td>特征修改方式</td><td>阶段一：启动参数与系统设置；阶段二：内核补丁。不使用脚本注入</td><td>注入有痕迹，且覆盖不到 Worker</td></tr>
+<tr><td>D9</td><td>浏览器</td><td><b>fingerprint-chromium 148.0.7778.215</b>（adryfish，BSD-3，基于 Ungoogled Chromium）的 macOS arm64 成品，版本锁定；不自行编译。只使用<b>源码已公开</b>的版本。普通 Chromium 159 保留作对照</td><td>v2 变更：省去自编译；实测结果见第 8.2 节</td></tr>
+<tr><td>D10</td><td>模板与种子</td><td>内置 4 套 macOS <b>模板</b>（按 Apple 官网技术规格整理，均为 M2 芯片）；新建环境时程序轮换选模板，自动生成该环境的<b>种子</b>（含 <code>fingerprint</code> 整数）并永久绑定（见第 8.4 节）</td><td>已确认</td></tr>
+<tr><td>D11</td><td>特征修改方式</td><td>只用 fingerprint-chromium 的<b>启动参数</b>（内核层修改）。不使用脚本注入、不装插件</td><td>注入有痕迹，且覆盖不到 Worker</td></tr>
 <tr><td>D12</td><td>数据根目录</td><td><span class="tag">默认</span><code>~/BrowserEnvs/</code></td><td>可在设置中修改</td></tr>
 <tr><td>D13</td><td>时区</td><td>环境里下拉选择，<b>默认日本东京</b>；预置美国、中国台湾、东南亚、法国、英国、新加坡等（见第 8.5 节）</td><td>已确认</td></tr>
 <tr><td>D14</td><td>出口 IP 复查</td><td>运行中定时复查，间隔<b>默认 10 秒内随机</b>，可在设置中调整</td><td>已确认（审核第 5 条）</td></tr>
 <tr><td>D15</td><td>pf 防火墙</td><td>保留，<b>做成开关</b>，默认关闭</td><td>已确认；需管理员权限</td></tr>
 <tr><td>D16</td><td>账号密码</td><td>保存账号登录密码，与代理密码同样明文存于 <code>env.json</code></td><td>已确认</td></tr>
 <tr><td>D17</td><td>本机隔离</td><td>环境浏览器访问本机及内网地址一律经中转拒绝；唯一例外为测试模式下的检测页端口</td><td>已确认（审核第 13 条）</td></tr>
-<tr><td>D18</td><td>检测页</td><td>放在本机、单独端口（默认 9000），仅测试模式下可访问；阶段 3 开发</td><td>已确认（审核第 1 条）</td></tr>
+<tr><td>D18</td><td>检测页</td><td>放在本机、单独端口（默认 9000），仅测试模式下可访问；阶段 2 开发</td><td>已确认（审核第 1 条）</td></tr>
 <tr><td>D19</td><td>管理页面保护</td><td>访问令牌 + Host 校验 + Origin 校验</td><td>已确认（审核第 11 条）</td></tr>
 <tr><td>D20</td><td>中转端口</td><td>不做进程校验</td><td>已确认（审核第 12 条，不改）</td></tr>
 <tr><td>D21</td><td>出口 IP 回显</td><td>公共服务轮换，接受被限流风险</td><td>已确认</td></tr>
+<tr><td>D22</td><td>浏览器品牌</td><td><code>--fingerprint-brand=Chrome</code>，UA 与 Client Hints 显示为 Google Chrome</td><td>已确认（真实 Mac 用户多为 Chrome）</td></tr>
+<tr><td>D23</td><td>CPU 核数</td><td>取<b>模板真机值</b>，用 <code>--fingerprint-hardware-concurrency</code> 固定，不交给种子随机</td><td>已确认；实测种子会给出 30/32 这类 Mac 不存在的值</td></tr>
+<tr><td>D24</td><td>显卡型号</td><td><code>--disable-spoofing=gpu</code>，显示<b>真机型号</b></td><td>已确认；伪装成 M4 而实际按 M2 渲染，深度检测时会对不上</td></tr>
+<tr><td>D25</td><td>代码仓库</td><td>GitHub 公开仓库 <code>fylsan3/envbrowser</code>；浏览器成品、工具链、环境数据不入库</td><td>已确认</td></tr>
 </table>
 
 <!-- ============ 3 ============ -->
@@ -189,7 +209,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <text x="603" y="155" text-anchor="middle" font-size="11" fill="#5f6368">读写</text>
 
 <rect x="640" y="250" width="210" height="96" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
-<text x="745" y="278" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Chromium 进程 ×N</text>
+<text x="745" y="278" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">fingerprint-chromium ×N</text>
 <text x="745" y="302" text-anchor="middle" font-size="12" fill="#185FA5">共享一份程序</text>
 <text x="745" y="322" text-anchor="middle" font-size="12" fill="#185FA5">每进程一个数据目录</text>
 <line x1="570" y1="298" x2="636" y2="298" stroke="#5f6368" stroke-width="1.5" marker-end="url(#a)"/>
@@ -201,7 +221,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 
 <rect x="10" y="396" width="840" height="60" rx="10" fill="#FAEEDA" stroke="#854F0B"/>
 <text x="430" y="422" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">本地中转 → 各环境绑定的上游代理（socks5h / http，均带用户名密码）→ 互联网</text>
-<text x="430" y="442" text-anchor="middle" font-size="12" fill="#854F0B">macOS pf 防火墙：浏览器进程除本机中转端口外一律禁止外连</text>
+<text x="430" y="442" text-anchor="middle" font-size="12" fill="#854F0B">macOS pf 防火墙（可选开关，默认关）：浏览器进程除本机中转端口外一律禁止外连</text>
 </svg>
 <figcaption>图 2　整体架构：一个主程序管理多个 Chromium 进程，所有流量经本地中转出网</figcaption>
 </figure>
@@ -277,12 +297,27 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <li>浏览器侧只看到 <code>127.0.0.1</code>，拿不到上游地址和密码。</li>
 </ul>
 
+<div class="ok">
+<b>换用 fingerprint-chromium 后，代理认证方案重新评估（2026-11-05）</b>
+<p style="margin:6px 0">fingerprint-chromium 官方说明对 <code>--proxy-server</code> 的原文是：<i>“http, socks proxy (password authentication not supported)”</i>。也就是说，<b>换浏览器后两种代理仍然都不能带密码</b>，问题没有消失。逐个比较可选方案：</p>
+<table>
+<tr><th style="width:170px">方案</th><th>做法</th><th style="width:250px">结论</th></tr>
+<tr><td>A. 本地中转（现方案）</td><td>浏览器连本机无密码端口，中转带密码连上游</td><td><b>保留</b>。socks5h、http 都支持，已实现并有测试</td></tr>
+<tr><td>B. 浏览器弹窗输入</td><td>http 代理返回 407 时，Chromium 弹出账号密码框，手动输入</td><td>不采用。<b>只对 http 有效</b>，socks5 不弹；每次启动都要输；还会被记住在浏览器数据里</td></tr>
+<tr><td>C. 调试协议自动填</td><td>开 CDP 端口，用 <code>Fetch.authRequired</code> 自动回填密码</td><td>不采用。只对 http 有效；违反“不开调试端口”（第 1 节），调试端口本身可被检测</td></tr>
+<tr><td>D. 浏览器插件</td><td>插件里写 <code>onAuthRequired</code></td><td>不采用。违反 D5“不装插件”</td></tr>
+<tr><td>E. 改内核源码</td><td>在 fingerprint-chromium 补丁上再加认证</td><td>不采用。要回到自编译（约 100GB 磁盘、数小时），升级时还要重打补丁</td></tr>
+</table>
+<p style="margin:6px 0"><b>另外，中转不只是为了认证。</b>本机与内网地址拦截（5.2）、测试模式放行、出口 IP 复查与一键断网、代理挂掉不直连，都依赖中转。即使将来浏览器支持了代理密码，中转仍然要保留。</p>
+<p style="margin:6px 0"><b>可以优化的地方（不改变方案）：</b>中转与上游之间的握手只在“新建连接”时发生，浏览器会复用连接，实际开销很小，暂不需要连接池；http 上游的 CONNECT 已带 Basic 认证，明文 http 网站也走 CONNECT 隧道，代理看不到也改不了请求头。</p>
+</div>
+
 <h3>5.2 断网保护（三层）</h3>
 <table>
 <tr><th style="width:110px">层</th><th>措施</th><th style="width:230px">作用</th></tr>
-<tr><td>浏览器</td><td><code>--proxy-server=socks5://127.0.0.1:端口</code><br><code>--force-webrtc-ip-handling-policy=disable_non_proxied_udp</code><br>关闭 QUIC；关闭后台组件更新、安全浏览、指标上报、预连接等后台请求<br><code>--proxy-bypass-list=&lt;-loopback&gt;</code>：访问本机地址也必须进中转</td><td>让正常流量都进中转，堵 WebRTC 和后台请求</td></tr>
+<tr><td>浏览器</td><td><code>--proxy-server=socks5://127.0.0.1:端口</code><br><code>--host-resolver-rules=MAP * ~NOTFOUND , EXCLUDE 127.0.0.1</code>：浏览器本机不做任何 DNS 解析<br><code>--force-webrtc-ip-handling-policy=disable_non_proxied_udp</code><br>关闭 QUIC；关闭后台组件更新、同步、指标上报等后台请求<br><code>--proxy-bypass-list=&lt;-loopback&gt;</code>：访问本机地址也必须进中转<br>启动前清除进程里的 <code>http_proxy</code>/<code>all_proxy</code> 等环境变量</td><td>让正常流量都进中转，堵 DNS、WebRTC 和后台请求</td></tr>
 <tr><td>中转（本机隔离）</td><td>目标为本机地址（<code>127.0.0.0/8</code>、<code>localhost</code>、<code>::1</code>）或内网地址（<code>10/8</code>、<code>172.16/12</code>、<code>192.168/16</code>、<code>169.254/16</code>、<code>fc00::/7</code>）的请求<b>一律拒绝，返回同一种错误</b>；目标域名解析结果的判断交给上游，中转只按字面地址拦截。<br>唯一例外：<b>测试模式</b>开启时放行本机检测页端口（见第 9 节）</td><td>网页脚本扫描本机端口时，所有端口表现一致，无法据此关联各环境（审核第 13 条）</td></tr>
-<tr><td>系统（可选）</td><td><b>开关，默认关闭。</b>使用 macOS 自带的 pf 包过滤器（<code>/etc/pf.conf</code> / <code>pfctl</code>，不是“系统设置”里的防火墙开关）。开启后：浏览器进程只允许连本机中转端口，其余外连全部丢弃（检测页请求也经中转，无需单独放行）。<br><b>可行性待阶段一验证</b>：按进程 / 用户区分流量在 macOS 上的实现方式（专用用户运行 GUI、pf 的 user 规则）需实测</td><td>兜底：浏览器有遗漏时也出不了网。需要管理员权限</td></tr>
+<tr><td>系统（可选）</td><td><b>开关，默认关闭。</b>使用 macOS 自带的 pf 包过滤器（<code>/etc/pf.conf</code> / <code>pfctl</code>，不是“系统设置”里的防火墙开关）。开启后：浏览器进程只允许连本机中转端口，其余外连全部丢弃（检测页请求也经中转，无需单独放行）。<br><b>可行性待验证，暂未排入实施阶段</b>：按进程 / 用户区分流量在 macOS 上的实现方式（专用用户运行 GUI、pf 的 user 规则）需实测</td><td>兜底：浏览器有遗漏时也出不了网。需要管理员权限</td></tr>
 <tr><td>中转</td><td>上游失败即断开（5.1）</td><td>代理挂掉时不会回退直连</td></tr>
 </table>
 
@@ -358,8 +393,20 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <tr><td>能同时开几个</td><td>中转不设上限，Go 处理上百个并发连接无压力。实际上限取决于 Mac 内存（每个 Chromium 约 300MB–1GB）。<span class="tag">默认</span>同时打开超过 10 个时在页面给出内存提示，不强制拦截。</td></tr>
 <tr><td>会不会串号</td><td>端口与上游的映射在启动时固定写入，运行中只读，不可修改。中转按“本地监听端口”查映射，不看请求内容。</td></tr>
 <tr><td>一个代理挂了</td><td>只影响对应环境，该环境断网并在页面标红；其他环境不受影响。</td></tr>
-<tr><td>端口回收</td><td>环境关闭或进程崩溃时释放端口；下次启动重新分配（端口号不参与指纹）。</td></tr>
+<tr><td>端口回收</td><td>环境关闭或进程崩溃时释放端口；释放后有 <b>60 秒冷却期</b>，冷却期内不分配给任何环境（端口号不参与指纹）。</td></tr>
 <tr><td>同一环境开两次</td><td>环境锁禁止。崩溃后残留的锁通过检测进程是否存活自动清除。</td></tr>
+<tr><td>主程序崩溃后的孤儿浏览器</td><td>见下方 6.1。</td></tr>
+</table>
+
+<h3 id="s6-1">6.1 主程序崩溃后的孤儿浏览器（防串号）</h3>
+<p><b>风险：</b>主程序异常退出时，中转随之消失，但浏览器进程可能还活着，并持续尝试连原来的 <code>127.0.0.1:端口</code>。如果这个端口随后被分配给另一个环境的中转，孤儿浏览器的请求就会走到<b>别人的代理</b>上，等于两个账号共用一个出口。</p>
+<table>
+<tr><th style="width:200px">措施</th><th>做法</th></tr>
+<tr><td>锁文件记录浏览器 PID</td><td><code>env.lock</code> 两行：第一行主程序 PID，第二行浏览器 PID（浏览器启动后立即写入）。</td></tr>
+<tr><td>判断主程序是否真的活着</td><td>PID 存在且进程名为 <code>envbrowser</code> 才算存活，防止 PID 被系统复用后环境永远打不开。</td></tr>
+<tr><td>加锁时清理</td><td>主程序已死、锁里的浏览器 PID 还活着，且其命令行确实带本环境的 <code>--user-data-dir</code> → 先结束它（SIGTERM，5 秒后 SIGKILL），再加锁。命令行对不上的进程<b>不动</b>，防止误杀。</td></tr>
+<tr><td>启动时全面清理</td><td>管理页面启动时、以及每次打开环境、分配端口<b>之前</b>，扫描所有带 <code>--user-data-dir=&lt;数据根目录&gt;/env-*/browser</code> 且所属环境没有存活主程序的浏览器主进程，全部结束。<b>清理失败则不启动</b>该环境。</td></tr>
+<tr><td>端口冷却</td><td>中转端口释放后 60 秒内不再分配，给孤儿浏览器留出被清理的时间窗；范围内只剩冷却中的端口时拒绝启动，不复用。</td></tr>
 </table>
 
 <h2 id="s7">7. 启动流程</h2>
@@ -381,7 +428,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <line x1="520" y1="48" x2="546" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
 <rect x="550" y="20" width="150" height="56" rx="10" fill="#FAEEDA" stroke="#854F0B"/>
 <text x="625" y="44" text-anchor="middle" font-weight="600" fill="#633806">④ 出口校验</text>
-<text x="625" y="63" text-anchor="middle" font-size="12" fill="#854F0B">IP · 重复 · 请求头</text>
+<text x="625" y="63" text-anchor="middle" font-size="12" fill="#854F0B">IP · 本机 · 请求头</text>
 <line x1="700" y1="48" x2="726" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
 <rect x="730" y="20" width="120" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
 <text x="790" y="44" text-anchor="middle" font-weight="600" fill="#0C447C">⑤ Apply</text>
@@ -407,75 +454,84 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 
 <h3>8.1 一致性规则（Validate 统一检查）</h3>
 <ul>
-<li>系统、UA、Client Hints、<code>navigator.platform</code>、字体集、WebGL 显卡信息必须指向<b>同一类真实设备</b>。</li>
+<li>系统、UA、Client Hints、<code>navigator.platform</code>、字体集、WebGL 显卡信息必须指向<b>同一类真实设备</b>。fingerprint-chromium 只伪装成 macOS（<code>--fingerprint-platform=macos</code>），模板也只采集 Mac。</li>
+<li>CPU 核数等于模板值；显卡显示本机真机型号。模板芯片与本机不一致时（例如模板是 M4、本机是 M2），核数与显卡会对不上，新建环境时提示。</li>
 <li>时区、语言与出口 IP 所在地一致（不一致时提示，不强制）。</li>
-<li>屏幕尺寸、可用区域、像素比必须是设备模板里的真实组合。</li>
-<li>所有带随机性的项共用一个<b>环境种子</b>，种子写入 <code>env.json</code>，同一环境每次结果完全一致。</li>
+<li>屏幕尺寸、像素比显示本机真机值；窗口尺寸不得超过本机屏幕。</li>
+<li>所有带随机性的项由环境种子决定，种子写入 <code>env.json</code>，同一环境每次结果完全一致（实测同一种子两次启动 Canvas、音频哈希相同）。</li>
 <li>主页面、iframe、Worker、Service Worker 读到的值必须相同。</li>
 </ul>
 
 <h3>8.2 积木清单</h3>
-<p><span class="p1">阶段一</span> 启动参数 / 系统设置即可完成　<span class="p2">阶段二</span> 需要自编译 Chromium 内核补丁</p>
+<p>全部通过 fingerprint-chromium 的<b>启动参数</b>实现，修改发生在 C++ 内核层，网页 JS 看到的仍是原生函数。<span class="p1">已验证</span> 表示 2026-11-05 已在本机实测通过；<span class="p2">待验证</span> 表示需在阶段 2 的检测页上确认。</p>
 <table>
-<tr><th style="width:130px">积木</th><th>内容</th><th style="width:80px">阶段</th><th style="width:260px">实现方式</th></tr>
-<tr><td>数据隔离</td><td>Cookie、存储、缓存、登录状态</td><td><span class="p1">一</span></td><td>每环境独立 <code>--user-data-dir</code></td></tr>
-<tr><td>Cookie 加密</td><td>不弹钥匙串授权框。<b>注意：所有环境共用一个固定密钥，Cookie 等同明文</b>；环境间隔离依靠独立数据目录</td><td><span class="p1">一</span></td><td><span class="tag">默认</span><code>--use-mock-keychain</code></td></tr>
-<tr><td>时区</td><td>JS 时区、Date 偏移、<code>Intl</code> 时区名</td><td><span class="p1">一</span></td><td>首选进程环境变量 <code>TZ</code>，<b>需阶段一实测</b>；Mac 版不生效则改用内核积木</td></tr>
-<tr><td>语言</td><td>界面语言、<code>navigator.languages</code>、<code>Accept-Language</code></td><td><span class="p1">一</span></td><td><code>-AppleLanguages</code> + 数据目录偏好文件；三处分别验证</td></tr>
-<tr><td>窗口</td><td>窗口大小、位置</td><td><span class="p1">一</span></td><td>启动参数</td></tr>
-<tr><td>WebRTC</td><td>不泄露真实 IP 与内网 IP</td><td><span class="p1">一</span></td><td>启动参数（见 5.2）</td></tr>
-<tr><td>自动化痕迹</td><td><code>navigator.webdriver</code>、调试端口</td><td><span class="p1">一</span></td><td>不开远程调试端口，不加自动化参数</td></tr>
-<tr><td>UA + Client Hints</td><td>UA 字符串、<code>Sec-CH-UA*</code>、<code>userAgentData</code> 同步</td><td><span class="p2">二</span></td><td>内核统一从配置读取</td></tr>
-<tr><td>硬件参数</td><td>CPU 核数、内存、屏幕分辨率、像素比</td><td><span class="p2">二</span></td><td>内核</td></tr>
-<tr><td>Canvas</td><td>按种子的确定性扰动</td><td><span class="p2">二</span></td><td>内核：读取像素处加扰动</td></tr>
-<tr><td>WebGL / WebGPU</td><td>厂商、型号、参数、扩展列表、渲染结果</td><td><span class="p2">二</span></td><td>内核</td></tr>
-<tr><td>音频</td><td>AudioContext 输出</td><td><span class="p2">二</span></td><td>内核：确定性扰动</td></tr>
-<tr><td>字体</td><td>可用字体列表、测宽结果</td><td><span class="p2">二</span></td><td>内核：按模板过滤</td></tr>
-<tr><td>媒体设备</td><td>摄像头、麦克风、扬声器列表与 ID</td><td><span class="p2">二</span></td><td>内核</td></tr>
-<tr><td>语音列表</td><td><code>speechSynthesis</code> 声音列表</td><td><span class="p2">二</span></td><td>内核</td></tr>
+<tr><th style="width:120px">积木</th><th>内容</th><th style="width:300px">启动参数</th><th style="width:80px">状态</th></tr>
+<tr><td>数据隔离</td><td>Cookie、存储、缓存、登录状态</td><td>每环境独立 <code>--user-data-dir</code></td><td><span class="p1">已验证</span></td></tr>
+<tr><td>Cookie 加密</td><td>不弹钥匙串授权框。<b>所有环境共用一个固定密钥，Cookie 等同明文</b></td><td><code>--use-mock-keychain --password-store=basic</code></td><td><span class="p1">已验证</span></td></tr>
+<tr><td>指纹种子</td><td>Canvas、音频、WebGL 图像、ClientRects、字体测宽等扰动的总开关</td><td><code>--fingerprint=&lt;种子整数&gt;</code></td><td><span class="p1">已验证</span></td></tr>
+<tr><td>时区</td><td>JS 时区、Date 偏移、<code>Intl</code>，Worker 同步</td><td><code>--timezone=Asia/Tokyo</code></td><td><span class="p1">已验证</span></td></tr>
+<tr><td>语言</td><td><code>navigator.language(s)</code>、<code>Accept-Language</code></td><td><code>--lang=ja-JP --accept-lang=ja-JP,ja</code></td><td><span class="p1">已验证</span></td></tr>
+<tr><td>UA + Client Hints</td><td>系统、品牌、版本，三处同步</td><td><code>--fingerprint-platform=macos</code><br><code>--fingerprint-platform-version=&lt;模板系统版本&gt;</code><br><code>--fingerprint-brand=Chrome</code></td><td><span class="p2">待验证</span></td></tr>
+<tr><td>CPU 核数</td><td><code>navigator.hardwareConcurrency</code></td><td><code>--fingerprint-hardware-concurrency=&lt;模板值&gt;</code>（D23）</td><td><span class="p2">待验证</span></td></tr>
+<tr><td>内存</td><td><code>navigator.deviceMemory</code></td><td>随种子变化（实测 16 / 32）。正版 Chrome 该值上限通常为 8，16/32 有被识别的可能，<b>使用者已评估接受</b>，保持随种子</td><td><span class="p1">已验证</span></td></tr>
+<tr><td>Canvas</td><td>按种子的确定性扰动</td><td>随种子；可用 <code>--disable-spoofing=canvas</code> 关闭</td><td><span class="p1">已验证</span></td></tr>
+<tr><td>音频</td><td>AudioContext 输出</td><td>随种子；<code>--disable-spoofing=audio</code></td><td><span class="p1">已验证</span></td></tr>
+<tr><td>显卡</td><td>WebGL 厂商与型号</td><td><code>--disable-spoofing=gpu</code>，显示真机型号（D24）</td><td><span class="p2">待验证</span></td></tr>
+<tr><td>字体 / ClientRects</td><td>字体列表、测宽</td><td>随种子；<code>--disable-spoofing=font,clientrects</code></td><td><span class="p2">待验证</span>（粗测未见变化）</td></tr>
+<tr><td>窗口</td><td>窗口大小</td><td><code>--window-size</code>，种子在本机屏幕范围内取常见值</td><td><span class="p1">已验证</span></td></tr>
+<tr><td>WebRTC</td><td>不泄露真实 IP 与内网 IP</td><td>见 5.2</td><td><span class="p2">待验证</span></td></tr>
+<tr><td>自动化痕迹</td><td><code>navigator.webdriver</code>、调试端口</td><td>不开远程调试端口，不加自动化参数（实测 <code>webdriver=false</code>）</td><td><span class="p1">已验证</span></td></tr>
+<tr><td>屏幕分辨率</td><td><code>screen.*</code>、像素比</td><td>fingerprint-chromium 无对应参数，<b>显示真机值</b></td><td>不支持</td></tr>
+<tr><td>媒体设备 / 语音</td><td>设备列表、<code>speechSynthesis</code></td><td>无对应参数，显示真机值</td><td>不支持</td></tr>
 </table>
 
-<h3>8.3 内核补丁规范（阶段二）</h3>
+<h3>8.3 积木开关与参数的对应</h3>
 <ul>
-<li>每块积木一个独立补丁文件，只读取 <code>--fingerprint-profile=&lt;路径&gt;</code> 指向的配置。</li>
-<li><b>配置里没有某项 = 该项保持原生行为</b>，积木可单独关闭。</li>
-<li>修改全部在 C++ 层，JS 看到的仍是原生函数。</li>
-<li>保留沙箱与证书校验，不关闭任何安全特性。</li>
-<li><span class="tag">默认</span>每个 Chromium 稳定大版本发布后 2 周内完成补丁合并、编译和全量回归。</li>
+<li><code>env.json</code> 的 <code>modules</code> 里每一项开关，由启动器翻译成对应参数：关闭 <code>canvas</code> → 追加 <code>canvas</code> 到 <code>--disable-spoofing</code>，以此类推。</li>
+<li><code>fingerprint</code> 总开关关闭时不传 <code>--fingerprint</code>，浏览器按原生行为运行（仅用于对照排查）。</li>
+<li>启动器只生成参数，不改浏览器文件；更换浏览器版本只需改设置里的路径和版本号。</li>
+<li>升级 fingerprint-chromium 版本前，必须先用检测页跑一遍全部积木，确认参数仍然有效，再切换。</li>
 </ul>
 
 <h3>8.4 模板与种子</h3>
 <table>
 <tr><th style="width:110px"></th><th>模板</th><th>种子</th></tr>
-<tr><td>是什么</td><td>一台真 Mac 的整套硬件与浏览器参数</td><td>某个环境专属的最终指纹 = 模板 + 轻微改动</td></tr>
-<tr><td>来源</td><td>使用者用<b>采集脚本</b>在真 Mac 上采集，2–3 套</td><td>新建环境时<b>程序自动生成</b>，使用者无需操作</td></tr>
-<tr><td>可变性</td><td>只读</td><td>生成后与环境永久绑定；可手动“重新生成”</td></tr>
-<tr><td>数量</td><td>不设上限</td><td>每个环境一个，不与其他环境共用</td></tr>
+<tr><td>是什么</td><td>一款真实 Mac 机型的公开规格（系统版本、CPU 核数）</td><td>某个环境专属的最终指纹 = 模板 + 种子扰动</td></tr>
+<tr><td>来源</td><td><b>按 Apple 官网技术规格整理</b>，内置于 <code>templates/presets.json</code>，不需要采集</td><td>新建环境时<b>程序自动生成</b>，使用者无需操作</td></tr>
+<tr><td>可变性</td><td>只读；可在管理页启用 / 停用、手动新增</td><td>生成后与环境永久绑定；可手动“重新生成”</td></tr>
+<tr><td>数量</td><td>当前 4 套，不设上限</td><td>每个环境一个，不与其他环境共用</td></tr>
 </table>
+<p><b>内置模板（2026-11-05 查询 Apple 官网）：</b></p>
+<table>
+<tr><th>模板名</th><th>机型</th><th>CPU 核数</th><th>系统版本</th><th>官方规格页</th></tr>
+<tr><td><code>macbook-air-13-m2-2022</code></td><td>MacBook Air (M2, 2022)</td><td>8</td><td>26.7.2</td><td>support.apple.com/111867</td></tr>
+<tr><td><code>macbook-air-15-m2-2023</code></td><td>MacBook Air (15 英寸, M2, 2023)</td><td>8</td><td>27.2.0</td><td>support.apple.com/111346</td></tr>
+<tr><td><code>macbook-pro-13-m2-2022</code></td><td>MacBook Pro (13 英寸, M2, 2022)</td><td>8</td><td>27.0.1</td><td>support.apple.com/111869</td></tr>
+<tr><td><code>mac-mini-m2-2023</code></td><td>Mac mini (2023, M2)</td><td>8</td><td>26.7.1</td><td>support.apple.com/111837</td></tr>
+</table>
+<ul>
+<li><b>为什么只选 M2：</b>显卡显示本机真机型号（D24），本机是 M2；模板也选 M2，核数（8）和显卡（Apple M2）才对得上。换 M3/M4 机型会出现“8 核 CPU + M4 显卡”这类不存在的组合。</li>
+<li><b>系统版本</b>取自 Apple 安全更新页（support.apple.com/100100）上 2026 年 9–10 月发布的正式版（macOS Tahoe 26.7.1 / 26.7.2、macOS 27.0.1 / 27.2），均为这些机型可安装的版本。Apple 发布新版后，按需更新此表。</li>
+<li>网页<b>读不到机型名</b>；模板实际生效的只有系统版本和 CPU 核数，机型和屏幕仅作记录。同一模板下的环境差异来自种子。</li>
+<li>更换运行本程序的 Mac 时（例如换成 M4），需要换一组同芯片的模板。</li>
+</ul>
 <p><b>生成规则：</b></p>
 <ol>
 <li>新建环境时，从已启用的模板中<b>轮换</b>选取：优先选被使用次数最少的模板，次数相同时随机。</li>
-<li>以下项<b>保持模板原值</b>（改了会出现真机不存在的组合）：机型、系统版本、显卡厂商与型号、WebGL 参数与扩展、屏幕分辨率与像素比、CPU 核数、内存、字体列表、语音列表。</li>
-<li>以下项<b>由种子生成差异</b>：Canvas 扰动值、音频扰动值、媒体设备 ID、窗口尺寸（在模板屏幕范围内取常见值）。</li>
+<li>以下项<b>取模板值</b>：系统版本（<code>--fingerprint-platform-version</code>）、CPU 核数（<code>--fingerprint-hardware-concurrency</code>）。显卡型号、屏幕、字体列表、媒体设备、语音列表显示<b>本机真机值</b>。</li>
+<li>以下项<b>由种子生成差异</b>：<code>fingerprint</code> 种子整数（程序随机生成，1 到 2<sup>31</sup>−1，所有环境间不重复），由它决定 Canvas、音频、WebGL 图像、内存、ClientRects 等；窗口尺寸（在本机屏幕范围内取常见值）。</li>
 <li>生成的种子写入该环境的 <code>env.json</code>，不同环境的种子不可相同。</li>
-<li>模板的硬件参数要到实施阶段 5（内核积木）才真正生效；阶段一至四网站读到的是本机真实硬件。</li>
+<li>新建环境时检查本机芯片：不是 M2 时提示“模板与本机芯片不一致”。</li>
 </ol>
-<p><b>模板采集脚本：</b></p>
-<ul>
-<li>提供一个独立的命令行脚本 <code>collect-template</code>（随主程序打包，可单独拷到其他 Mac 上运行）。</li>
-<li>运行方式：在要采集的真 Mac 上执行 <code>./collect-template --name mac-mini-m2</code>。</li>
-<li>脚本自动：调用本机已安装的 Chrome 以无头模式打开内置采集页 → 读取全部参数 → 同时读取系统信息（机型、系统版本、芯片、屏幕）→ 输出 <code>mac-mini-m2.template.json</code>。</li>
-<li>使用者把输出文件拷回，在管理页面“模板管理 → 导入”，或直接放进 <code>~/BrowserEnvs/templates/</code>。</li>
-<li>导入时校验：格式、必填项、与已有模板是否重复（重复则提示）。</li>
-<li>脚本会额外用有界面模式采集一次 WebGL/Canvas 并与无头模式对比，因为无头模式下显卡信息可能与日常使用不同；两者不一致时以有界面结果为准。</li>
-</ul>
-<p><b>模板管理页面：</b>模板列表、每个模板被几个环境使用、启用 / 停用（停用后不再被新环境选中，已绑定环境不受影响）、删除（有环境在用时禁止删除）。</p>
+<p><b>模板管理页面：</b>模板列表、每个模板被几个环境使用、启用 / 停用（停用后不再被新环境选中，已绑定环境不受影响）、手动新增、删除（有环境在用时禁止删除）。</p>
 
 <h3>8.5 时区与语言</h3>
 <ul>
 <li>新建 / 编辑环境时下拉选择时区，<b>默认 日本 · 东京</b>。</li>
 <li>选择时区后自动带出对应语言默认值，可单独修改。</li>
-<li>提供“按出口 IP 自动匹配”按钮：查离线 IP 归属地库，自动选中最接近的时区和语言。归属地库采用 GeoLite2（境外 IP 更准）。</li>
+<li>提供“按出口 IP 自动匹配”按钮：经该环境的代理请求 Cloudflare <code>/cdn-cgi/trace</code>，取返回中的 <code>loc=</code> 国家代码（如 <code>JP</code>），按下表映射时区和语言。<b>不需要额外安装 IP 库</b>，出口校验本来就在请求这个服务，可顺带取得。</li>
+<li>一个国家对应多个时区时（如美国 <code>US</code>），列出该国的候选时区让使用者选；不在下表中的国家只提示国家代码，不自动选择。</li>
+<li>运行中的定时复查若发现国家代码变化，与出口 IP 变化同等处理（立即断网）。</li>
 <li>出口 IP 归属地与所选时区明显不符时，在页面提示，不强制拦截。</li>
 </ul>
 <table>
@@ -498,7 +554,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <p class="sub">列表存于 <code>settings.json</code>，可自行增删。</p>
 
 <h2 id="s9">9. 检测积木</h2>
-<p><b>只在测试和验收时使用，日常使用不需要；实施阶段 3 再开发。</b></p>
+<p><b>只在测试和验收时使用，日常使用不需要；实施阶段 2 开发。</b>阶段 1 验证时已有一个简易版 <code>tools/fpcheck/</code>（单页 + 无头采集脚本），阶段 2 在此基础上扩充。</p>
 <h3>9.1 部署与访问</h3>
 <ul>
 <li>检测页由主程序在本机提供，<b>单独端口</b>，<span class="tag">默认</span><code>127.0.0.1:9000</code>；<b>不与管理页面（8800）共用端口</b>。</li>
@@ -516,7 +572,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <li>报告每行：<b>检测项 / 配置目标值 / 实际读取值 / 读取位置 / 是否一致</b>。</li>
 <li>本机检测页<b>能测</b>：时区、语言、UA、屏幕、Canvas、WebGL、音频、字体、多位置一致性、WebRTC 候选地址（借助公共 STUN）、本机端口扫描测试（验证第 5.2 节本机隔离生效）。</li>
 <li>本机检测页<b>测不准</b>（未经代理出网）：出口 IP、代理是否篡改请求头 —— 改由中转在后台用公共回显服务检查（第 5.3 节）。</li>
-<li>跨环境比对：出口 IP 与各环境录入值一致；<b>指纹哈希互不相同这一项从实施阶段 5（内核积木完成）起才检查</b>，阶段一至四硬件类指纹必然相同。</li>
+<li>跨环境比对：出口 IP 与各环境录入值一致；<b>Canvas、音频哈希任意两个环境互不相同</b>（阶段 2 起检查）。</li>
 <li>稳定性：同一环境重启 3 次，全部结果一致。</li>
 <li>报告保存在该环境目录的 <code>reports/</code> 下，按时间命名，可在管理页面查看历史。</li>
 </ul>
@@ -545,7 +601,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <text x="740" y="98" text-anchor="middle" font-size="12" fill="#185FA5">数量不限</text>
 <rect x="440" y="130" width="390" height="60" rx="10" fill="#fff" stroke="#888780"/>
 <text x="635" y="156" text-anchor="middle" font-size="13" font-weight="600" fill="#2C2C2A">templates/</text>
-<text x="635" y="176" text-anchor="middle" font-size="12" fill="#5F5E5A">macOS 真机模板（脚本采集，只读，轮换使用）</text>
+<text x="635" y="176" text-anchor="middle" font-size="12" fill="#5F5E5A">macOS 模板（按 Apple 官网规格，只读，轮换使用）</text>
 <rect x="440" y="206" width="390" height="60" rx="10" fill="#fff" stroke="#888780"/>
 <text x="635" y="232" text-anchor="middle" font-size="13" font-weight="600" fill="#2C2C2A">settings.json · logs/</text>
 <text x="635" y="252" text-anchor="middle" font-size="12" fill="#5F5E5A">全局设置、Chromium 路径与版本、日志</text>
@@ -555,7 +611,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 
 <h3>env.json 示例</h3>
 <pre><code>{
-  "schema_version": 1,
+  "schema_version": 2,
   "id": "env-0001",
   "name": "环境A",
   "created_at": "2026-11-05T15:30:00+08:00",
@@ -588,28 +644,30 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
   "fingerprint": {
     "template": "mac-mini-m2",
     "seed": {
-      "canvas_noise": "程序生成",
-      "audio_noise": "程序生成",
-      "media_device_ids": "程序生成",
+      "fingerprint": 1834502917,
       "window": { "width": 1440, "height": 900 }
     },
+    "platform_version": "15.5.0",
+    "hardware_concurrency": 8,
     "timezone": "Asia/Tokyo",
     "languages": ["ja-JP", "ja"]
   },
 
   "modules": {
+    "isolation": true, "network_guard": true, "fingerprint": true,
     "timezone": true, "language": true, "window": true, "webrtc": true,
-    "ua_client_hints": false, "hardware": false, "canvas": false,
-    "webgl": false, "audio": false, "fonts": false,
-    "media_devices": false, "speech": false
+    "ua_client_hints": true, "hardware": true,
+    "canvas": true, "audio": true, "fonts": true, "clientrects": true,
+    "gpu": false
   },
 
-  "chromium_version": "锁定的版本号"
+  "chromium_version": "148.0.7778.215"
 }</code></pre>
 <div class="note">
 <ul style="margin:0">
+<li><code>schema_version</code> 升为 <b>2</b>：<code>seed</code> 里去掉 v1 的 <code>canvas_noise</code>/<code>audio_noise</code>/<code>media_device_ids</code>，改为一个 <code>fingerprint</code> 整数；新增 <code>platform_version</code>、<code>hardware_concurrency</code>（来自模板）。v1 环境读取时自动迁移并重新生成种子。</li>
+<li><code>gpu</code> 默认 <code>false</code> = 不伪装显卡（D24）。</li>
 <li><code>secondary</code> 可省略；<code>active</code> 只能在环境关闭时修改，不会自动切换。</li>
-<li>阶段二的积木在内核补丁完成前默认为 <code>false</code>。</li>
 <li>密码按要求以明文保存在 <code>env.json</code> 中（D6），见第 13 节风险说明。</li>
 </ul>
 </div>
@@ -628,9 +686,9 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <tr><th style="width:150px">页面</th><th>功能</th></tr>
 <tr><td>环境列表</td><td>搜索（名称、账号、备注、代理地址）；显示状态（未打开 / 运行中 / 代理异常）、出口 IP、最近检测结果；启动、关闭、检测按钮</td></tr>
 <tr><td>新建 / 编辑环境</td><td>一个页面填完全部信息：账号与<b>登录密码</b>、代理（类型、地址、端口、用户名、<b>密码可见可改</b>、指定出口 IP）、时区（默认东京）、语言、积木开关。模板与种子自动分配，页面只显示结果，并提供“重新生成种子”按钮。“测试代理”按钮：认证 + 出口 IP + 请求头检查。“按出口 IP 自动匹配时区”按钮</td></tr>
-<tr><td>模板管理</td><td>导入采集脚本生成的模板文件；列表显示使用次数；启用 / 停用 / 删除</td></tr>
+<tr><td>模板管理</td><td>列出内置模板（机型、芯片、核数、系统版本、来源链接）及使用次数；启用 / 停用；可手动新增一条（填系统版本与核数）</td></tr>
 <tr><td>环境详情</td><td>完整配置、本次运行的本地端口、检测报告历史、运行日志</td></tr>
-<tr><td>设置</td><td>数据根目录、Chromium 路径与版本、端口范围、内存提示阈值</td></tr>
+<tr><td>设置</td><td>数据根目录、浏览器（fingerprint-chromium）路径与版本、端口范围、内存提示阈值、测试模式开关</td></tr>
 </table>
 <ul>
 <li>运行中的环境，代理和指纹字段只读；关闭后才可编辑。</li>
@@ -640,27 +698,43 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 
 <h2 id="s12">12. 实施顺序与验收</h2>
 <table>
-<tr><th style="width:56px">阶段</th><th style="width:210px">内容</th><th>验收标准</th></tr>
-<tr><td>1</td><td>核心层 + 网络积木 + 2 个样本环境</td><td>两个环境 Cookie 互不可见；socks5h 与 http 均能带用户名密码连通；<b>http 上游访问明文 http（80 端口）网站正常</b>（部分 HTTP 代理只允许 CONNECT 443，不通时中转需改用普通转发）；出口 IP 与录入值一致且不等于本机 IP，运行中更换代理出口能在复查间隔内断网；断掉上游后该环境所有页面打不开，抓包确认零直连；WebRTC 检测不到真实 IP 与内网 IP；本机无 DNS 查询</td></tr>
-<tr><td>2</td><td>多环境并行</td><td>同时打开 5 个环境、各走各的代理，出口 IP 各不相同；任意关掉一个代理只影响对应环境；崩溃后残留锁可自动清除</td></tr>
-<tr><td>3</td><td>阶段一指纹积木 + 检测页</td><td>时区、语言三处、窗口与配置一致；主页面 / iframe / Worker 一致；重启 3 次结果不变；测试模式关闭时检测页不可访问，开启时只有检测页可访问；本机端口扫描测试中所有端口表现一致</td></tr>
-<tr><td>4</td><td>管理页面</td><td>新建、编辑、启动、关闭、搜索、检测、复制、删除全部可用；运行中禁止编辑代理与指纹</td></tr>
-<tr><td>5</td><td>自编译 Chromium + 阶段二内核积木</td><td>每块积木可单独开关；任意两个环境指纹哈希不同；检测页无矛盾项</td></tr>
-<tr><td>6</td><td>安全验证与打包</td><td>沙箱、证书校验正常；完成签名与公证</td></tr>
+<tr><th style="width:56px">阶段</th><th style="width:200px">内容</th><th>验收标准</th><th style="width:90px">状态</th></tr>
+<tr><td>1</td><td>核心层 + 网络积木 + 命令行</td><td>socks5h 与 http 均能带用户名密码连通、认证错误即断；上游不可用时不直连；本机与内网地址被拒；测试模式只放行一个地址；断网后现有连接全部切断；UDP 被拒；出口校验不通过不启动浏览器；环境锁与残留锁清除</td><td><span class="p1">已完成</span><br>单元测试 13 项通过</td></tr>
+<tr><td>1.4</td><td>代码接入 fingerprint-chromium + 孤儿浏览器修复</td><td>配置升到版本 2、v1 自动迁移并留备份；内置 4 套模板轮换、种子各环境不重复；启动参数按第 8.2 / 8.3 节生成，时区改用 <code>--timezone</code>；6.1 节的孤儿清理与端口冷却</td><td><span class="p1">已完成</span><br>2026-11-05 单元测试 24 项通过</td></tr>
+<tr><td>1.5</td><td>接入 fingerprint-chromium + 真实代理实测</td><td>用真实代理打开 2 个样本环境：出口 IP 与录入值一致；<b>http 上游访问明文 http（80 端口）网站正常</b>；断掉上游后页面打不开；<b>按第 12.1 节方法确认零直连、本机无 DNS 查询</b>；两个环境 Cookie 互不可见</td><td>下一步</td></tr>
+<tr><td>2</td><td>检测页 + 指纹积木验证</td><td>第 8.2 节“待验证”项全部确认；时区、语言、UA、核数与配置一致；主页面 / iframe / Worker 一致；重启 3 次结果不变；任意两个环境 Canvas、音频哈希不同；测试模式开关行为正确；本机端口扫描测试中所有端口表现一致</td><td></td></tr>
+<tr><td>3</td><td>多环境并行 + 模板</td><td>同时打开 5 个环境、各走各的代理；任意关掉一个代理只影响对应环境；内置模板加载正常，新建环境轮换模板</td><td></td></tr>
+<tr><td>4</td><td>完整管理页面</td><td>新建、编辑、启动、关闭、搜索、检测、复制、删除全部可用；运行中禁止编辑代理与指纹</td><td></td></tr>
+<tr><td>5</td><td>安全验证与打包</td><td>正式启动不带 <code>--no-sandbox</code>，沙箱正常；证书校验正常；打包为 .app</td><td></td></tr>
 </table>
+
+<h3>12.1 “零直连”与“本机无 DNS”的实测方法（阶段 1.5 用）</h3>
+<p>判断标准：<b>浏览器的所有进程只允许连 <code>127.0.0.1</code></b>；对外的连接只能由主程序发起，且目标只能是该环境的上游代理。用 macOS 自带工具即可，不需要装抓包软件。</p>
+<ol>
+<li><b>找出这个环境的全部浏览器进程</b>（Chromium 是多进程，网络请求由其中的网络服务进程发出）：<br><code>pgrep -f 'user-data-dir=.*env-0001/browser'</code></li>
+<li><b>看浏览器进程连了哪里</b>，正常只应出现 <code>127.0.0.1:2000x</code>：<br><code>lsof -nP -iTCP -iUDP -a -p $(pgrep -d, -f 'user-data-dir=.*env-0001/browser')</code><br>边浏览网页边每秒执行一次，出现任何非 127.0.0.1 的地址即为直连。</li>
+<li><b>看主程序连了哪里</b>，正常只应出现上游代理地址：<br><code>lsof -nP -iTCP -a -p $(pgrep -x envbrowser)</code></li>
+<li><b>抓本机 DNS 查询</b>（需要管理员密码）：<br><code>sudo tcpdump -i any -n 'port 53 or port 5353 or port 853'</code><br>打开环境、浏览几个网站，期间不应出现由浏览器访问的网站域名。主程序启动时查一次本机 IP、以及上游代理若填的是域名，会各产生一次查询，属正常。</li>
+<li><b>断上游测试</b>：浏览中在代理后台停用该代理（或临时改错密码），确认页面立即打不开，同时第 2 步仍然没有非 127.0.0.1 的连接。</li>
+<li><b>WebRTC / UDP</b>：第 2 步结果中不应出现任何 UDP 外连；在 browserleaks 的 WebRTC 页确认看不到本机和内网 IP。</li>
+</ol>
+<p class="sub">以上步骤可在阶段 1.5 整理成脚本 <code>tools/leakcheck.sh</code>，自动轮询并汇总结果。</p>
 
 <h2 id="s13">13. 风险与已知限制</h2>
 <table>
 <tr><th style="width:180px">项</th><th>说明</th></tr>
 <tr><td>代理与账号密码明文存放</td><td>代理密码、账号登录密码按要求明文保存在 <code>env.json</code>；Cookie 因 <code>--use-mock-keychain</code> 也等同明文。备份、同步网盘、发给他人时会一并带走。建议数据根目录不放在 iCloud 等同步目录下。</td></tr>
 <tr><td>出口 IP 复查流量</td><td>默认 1–10 秒随机复查，单环境约 17MB/天；按流量计费的代理需计入成本。回显服务使用公共服务轮换，可能被限流（已接受）。</td></tr>
-<tr><td>待实测项</td><td>Mac 版 Chromium 的 <code>TZ</code> 时区是否生效；pf 按进程隔离是否可行；无头模式采集的显卡信息是否与有界面一致。</td></tr>
-<tr><td>已暴露的代理密码</td><td><code>x.x.x.x:端口</code> 的用户名密码已在聊天和终端历史中出现，建议在代理后台修改后再录入。</td></tr>
-<tr><td>阶段二成本</td><td>Mac 需约 100GB 以上磁盘、建议 32GB 内存，首次编译需数小时；每个 Chromium 大版本都要重新合并补丁。</td></tr>
-<tr><td>指纹不承诺无法识别</td><td>阶段一完成时，各环境的硬件类指纹仍相同；阶段二完成后也只保证自洽与差异化，不保证对所有检测方案有效。</td></tr>
+<tr><td>待实测项</td><td>UA 品牌与系统版本参数、CPU 核数参数、<code>--disable-spoofing=gpu</code> 在 Mac 上的效果；字体与 ClientRects 是否随种子变化；有界面模式下的表现（本次实测为无头模式）；<code>--fingerprint-platform-version</code> 填 26.x / 27.x 时 Client Hints 的实际输出；pf 按进程隔离是否可行。</td></tr>
+<tr><td>fingerprint-chromium 依赖</td><td>作者一人维护、不提供技术支持；Mac 版不是每个版本都有（当前最新 Mac 版 148，落后上游）；新版本源码约晚一个月公开。只使用源码已公开的版本；作者停更时可用已公开补丁自行编译（需约 100GB 磁盘），作为最后退路。</td></tr>
+<tr><td>未经苹果认证</td><td>浏览器为作者自签（ad-hoc），首次打开可能被 macOS 拦截，需在“系统设置 → 隐私与安全性”放行。已记录安装包 SHA-256：<code>b72f091e…e23ca679</code>，升级时比对。</td></tr>
+<tr><td>同模板环境部分相同</td><td>按 D23/D24，同一模板的环境 CPU 核数、显卡、屏幕相同；差异来自种子（Canvas、音频、WebGL 图像、内存等）。需要更多差异时增加不同机型的模板。</td></tr>
+<tr><td>版本号偏旧</td><td>UA 显示 Chrome 148，比当前正式版 Chrome 旧若干版本；长期不升级会显得异常。每次 fingerprint-chromium 发布新 Mac 版后评估升级。</td></tr>
+<tr><td>代理信息不入仓库（<b>铁律</b>）</td><td>仓库为公开仓库。<b>任何提交都不得包含真实的代理 IP、端口、用户名、密码</b>（含测试用代理），文档、代码、测试、示例、日志一律使用 <code>x.x.x.x</code> / <code>代理用户名</code> / <code>代理密码</code> 等占位符。每次提交前扫描暂存内容和全部历史，命中即停止提交。<code>env.json</code>、<code>BrowserEnvs/</code>、文档备份已在 <code>.gitignore</code> 中排除。<br><b>自动检查：</b>仓库内置 <code>scripts/hooks/</code>，已用 <code>git config core.hooksPath scripts/hooks</code> 启用。提交前检查新增内容、推送前检查待推送提交和全部历史：① 出现本机 / 内网 / 文档示例段以外的 IP 地址即拦截；② 命中本地清单 <code>.secrets/forbidden.txt</code>（使用者自己填写真实代理 IP、端口、用户名、密码，此文件不进仓库）即拦截，报错时只显示前两个字符。重新克隆仓库后需要重新执行一次 <code>core.hooksPath</code> 设置并补上清单。聊天中出现过的代理为测试用，使用者已确认无需修改密码。</td></tr>
+<tr><td>指纹不承诺无法识别</td><td>只保证自洽与差异化，不保证对所有检测方案有效。TLS / HTTP2 握手特征、IP 信誉不在浏览器参数能控制的范围内。</td></tr>
 <tr><td>跨系统伪装</td><td>第一版只做 macOS 模板，不支持伪装成 Windows / Android。</td></tr>
 <tr><td>行为特征</td><td>鼠标轨迹、输入节奏等不在本项目范围内。</td></tr>
-<tr><td>pf 防火墙</td><td>需要管理员权限安装规则；首次运行时由使用者手动授权。</td></tr>
+<tr><td>pf 防火墙</td><td>需要管理员权限安装规则；首次运行时由使用者手动授权。可行性未验证，暂未排期。</td></tr>
 </table>
 
 </main>

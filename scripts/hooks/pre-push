@@ -1,0 +1,11 @@
+#!/bin/bash
+# 推送前：检查本次要推送的提交，并用禁用词清单扫描全部历史。
+S="$(git rev-parse --show-toplevel)/scripts/hooks/secret-scan.sh"
+Z=0000000000000000000000000000000000000000
+while read -r lref lsha rref rsha; do
+  [ "$lsha" = "$Z" ] && continue              # 删除远端分支，无需检查
+  if [ "$rsha" = "$Z" ]; then range="$lsha"   # 新分支：检查全部
+  else range="$rsha..$lsha"; fi
+  "$S" range "$range" || exit 1
+done
+exec "$S" history

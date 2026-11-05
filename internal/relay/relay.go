@@ -53,6 +53,9 @@ func Start(envID string, up config.Upstream, portMin, portMax int, logf func(str
 	var ln net.Listener
 	var err error
 	for p := portMin; p <= portMax; p++ {
+		if coolingDown(p) {
+			continue
+		}
 		ln, err = net.Listen("tcp", net.JoinHostPort("127.0.0.1", strconv.Itoa(p)))
 		if err == nil {
 			break
@@ -85,7 +88,26 @@ func (r *Relay) Block(reason string) {
 
 func (r *Relay) Blocked() bool { return r.blocked.Load() }
 
+// PortCooldown 中转端口释放后，这段时间内不再分配给其他环境。
+// 防止仍连着旧端口的浏览器（例如主程序异常退出后残留的）接到别的环境的代理上。
+var PortCooldown = 60 * time.Second
+
+var released sync.Map // port -> time.Time
+
+func coolingDown(port int) bool {
+	v, ok := released.Load(port)
+	if !ok {
+		return false
+	}
+	if time.Since(v.(time.Time)) >= PortCooldown {
+		released.Delete(port)
+		return false
+	}
+	return true
+}
+
 func (r *Relay) Close() error {
+	defer released.Store(r.Port(), time.Now())
 	err := r.ln.Close()
 	r.closeAll()
 	r.wg.Wait()

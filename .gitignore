@@ -13,3 +13,6 @@ env.json
 docs/.*.bak-*
 
 .DS_Store
+
+# 本地禁用词清单（真实代理信息），绝不进仓库
+.secrets/

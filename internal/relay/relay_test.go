@@ -312,3 +312,27 @@ func TestUDPRejected(t *testing.T) {
 		t.Fatalf("UDP 应被拒绝，rep=%d", resp[1])
 	}
 }
+
+// 端口释放后在冷却期内不得被分配给下一个环境。
+func TestPortCooldown(t *testing.T) {
+	up := config.Upstream{Type: "socks5h", Host: "203.0.113.1", Port: 1080, Username: "u", Password: "p"}
+	r1, err := Start("env-a", up, 31001, 31002, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p1 := r1.Port()
+	r1.Close()
+	r2, err := Start("env-b", up, 31001, 31002, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer r2.Close()
+	if r2.Port() == p1 {
+		t.Fatalf("端口 %d 刚释放就被重新分配", p1)
+	}
+	// 范围内只剩冷却中的端口时应拒绝启动，而不是复用
+	if r3, err := Start("env-c", up, p1, p1, nil); err == nil {
+		r3.Close()
+		t.Fatal("冷却中的端口不应被分配")
+	}
+}
