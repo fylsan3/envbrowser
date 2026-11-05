@@ -251,6 +251,8 @@ type NewEnvInput struct {
 	Timezone    string
 	Language    string // 为空时按时区默认
 	Window      Window
+	// Modules 为空时用默认积木；复制环境时传入原环境的积木
+	Modules map[string]bool
 }
 
 func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
@@ -302,13 +304,24 @@ func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
 			Timezone:            tz,
 			Languages:           SplitLang(lang),
 		},
-		Modules:         DefaultModules(),
+		Modules:         mergeModules(in.Modules),
 		ChromiumVersion: st.ChromiumVer,
 	}
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
 	return e, s.Save(e)
+}
+
+// mergeModules 以默认积木为底，覆盖传入的值（只认已知积木名）。
+func mergeModules(in map[string]bool) map[string]bool {
+	m := DefaultModules()
+	for k := range m {
+		if v, ok := in[k]; ok {
+			m[k] = v
+		}
+	}
+	return m
 }
 
 // DefaultModules v2 积木默认值。值为 false 的指纹积木会进入 --disable-spoofing。

@@ -203,6 +203,11 @@ func Open(e *config.Env, st config.Settings, local net.IP, save func(*config.Env
 
 func (s *Session) Status0() string { st, _, _ := s.Status(); return st }
 
+// Fake 只给其他包的测试用：造一个指定状态的会话，不启动中转和浏览器。
+func Fake(e *config.Env, status string) *Session {
+	return &Session{Env: e, status: status, done: make(chan struct{})}
+}
+
 // Close 请求关闭浏览器，并等待清理完成。
 func (s *Session) Close() {
 	if s.cancel != nil {

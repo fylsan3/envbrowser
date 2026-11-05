@@ -1,14 +1,14 @@
-// Package admin 是最小管理接口（阶段 1）：只监听本机，带访问令牌、Host 与 Origin 校验。
-// 完整的管理页面在阶段 4 实现。
+// Package admin 管理页面（需求规格第 11 节）：只监听本机，带访问令牌、Host 与 Origin 校验。
+// 页面是一个内嵌的 HTML 文件（只用浏览器自带的 JS，不引入外部库），数据全部走 /api。
 package admin
 
 import (
 	"crypto/rand"
 	"crypto/subtle"
+	_ "embed"
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
-	"html/template"
 	"net"
 	"net/http"
 	"net/url"
@@ -18,25 +18,44 @@ import (
 	"envbrowser/internal/runner"
 )
 
-type Server struct {
-	Store    *config.Store
-	Settings config.Settings
-	Local    net.IP
+//go:embed web/index.html
+var indexHTML []byte
 
-	token string
-	mu    sync.Mutex
-	sess  map[string]*runner.Session
+//go:embed web/app.js
+var appJS []byte
+
+//go:embed web/form.js
+var formJS []byte
+
+// script 页面脚本：app.js（公共与列表、模板、设置）+ form.js（新建编辑、详情）。
+var script = append(append(append([]byte{}, appJS...), '\n'), formJS...)
+
+type Server struct {
+	Store *config.Store
+	Local net.IP
+
+	token    string
+	mu       sync.Mutex
+	settings config.Settings
+	sess     map[string]*runner.Session
 }
 
 func New(store *config.Store, st config.Settings, local net.IP) *Server {
 	b := make([]byte, 24)
 	rand.Read(b)
-	return &Server{Store: store, Settings: st, Local: local, token: hex.EncodeToString(b), sess: map[string]*runner.Session{}}
+	return &Server{Store: store, settings: st, Local: local, token: hex.EncodeToString(b), sess: map[string]*runner.Session{}}
+}
+
+// Settings 返回当前设置的副本。
+func (s *Server) Settings() config.Settings {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.settings
 }
 
 // URL 带令牌的首次访问地址。
 func (s *Server) URL() string {
-	return fmt.Sprintf("http://%s/?token=%s", s.Settings.AdminAddr, s.token)
+	return fmt.Sprintf("http://%s/?token=%s", s.Settings().AdminAddr, s.token)
 }
 
 const cookieName = "envbrowser_token"
@@ -44,14 +63,30 @@ const cookieName = "envbrowser_token"
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", s.index)
+	mux.HandleFunc("GET /app.js", s.serveScript)
+	mux.HandleFunc("GET /api/meta", s.meta)
 	mux.HandleFunc("GET /api/envs", s.listEnvs)
+	mux.HandleFunc("POST /api/envs", s.createEnv)
+	mux.HandleFunc("GET /api/envs/{id}", s.getEnv)
+	mux.HandleFunc("POST /api/envs/{id}", s.updateEnv)
+	mux.HandleFunc("GET /api/envs/{id}/log", s.envLog)
 	mux.HandleFunc("POST /api/envs/{id}/open", s.open)
 	mux.HandleFunc("POST /api/envs/{id}/close", s.close)
+	mux.HandleFunc("POST /api/envs/{id}/check", s.checkEnv)
+	mux.HandleFunc("POST /api/envs/{id}/regen-seed", s.regenSeed)
+	mux.HandleFunc("POST /api/envs/{id}/trash", s.trash)
+	mux.HandleFunc("POST /api/proxy/check", s.checkProxy)
+	mux.HandleFunc("POST /api/proxy/autozone", s.autoZone)
+	mux.HandleFunc("GET /api/templates", s.listTemplates)
+	mux.HandleFunc("POST /api/templates", s.addTemplate)
+	mux.HandleFunc("POST /api/templates/enable", s.enableTemplate)
+	mux.HandleFunc("GET /api/settings", s.getSettings)
+	mux.HandleFunc("POST /api/settings", s.saveSettings)
 	return s.guard(mux)
 }
 
 func (s *Server) guard(next http.Handler) http.Handler {
-	_, port, _ := net.SplitHostPort(s.Settings.AdminAddr)
+	_, port, _ := net.SplitHostPort(s.Settings().AdminAddr)
 	allowedHost := map[string]bool{"127.0.0.1:" + port: true, "localhost:" + port: true}
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		// 防 DNS 重绑定
@@ -83,87 +118,37 @@ func (s *Server) guard(next http.Handler) http.Handler {
 		}
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Frame-Options", "DENY")
+		// 脚本只允许本站的 app.js，页面里不写内联脚本和 onclick
+		w.Header().Set("Content-Security-Policy", "default-src 'none'; script-src 'self'; style-src 'unsafe-inline'; connect-src 'self'; img-src 'self'; form-action 'none'; base-uri 'none'; frame-ancestors 'none'")
+		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
 		next.ServeHTTP(w, r)
 	})
 }
 
-type envView struct {
-	ID, Name, Account, Proxy, ExitIP, Timezone string
-	Status, LastIP, LastErr                    string
-	Port                                       int
+func (s *Server) serveScript(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/javascript; charset=utf-8")
+	w.Write(script)
 }
 
-func (s *Server) views() ([]envView, error) {
-	envs, err := s.Store.List()
-	if err != nil {
-		return nil, err
-	}
+func (s *Server) index(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Write(indexHTML)
+}
+
+// session 返回运行中的会话；已关闭的会顺带清掉。
+func (s *Server) session(id string) *runner.Session {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []envView
-	for _, e := range envs {
-		up, _ := e.ActiveUpstream()
-		v := envView{ID: e.ID, Name: e.Name, Account: e.Account.Username, ExitIP: e.Proxy.ExitIP, Timezone: e.Fingerprint.Timezone, Status: "closed"}
-		if up != nil {
-			v.Proxy = up.Redacted()
-		}
-		if ss := s.sess[e.ID]; ss != nil {
-			v.Status, v.LastIP, v.LastErr = ss.Status()
-			if v.Status == "closed" {
-				delete(s.sess, e.ID)
-			} else {
-				v.Port = ss.Relay.Port()
-			}
-		}
-		out = append(out, v)
+	ss := s.sess[id]
+	if ss != nil && ss.Status0() == "closed" {
+		delete(s.sess, id)
+		return nil
 	}
-	return out, nil
+	return ss
 }
 
-func (s *Server) listEnvs(w http.ResponseWriter, r *http.Request) {
-	v, err := s.views()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(v)
-}
-
-func (s *Server) open(w http.ResponseWriter, r *http.Request) {
-	id := r.PathValue("id")
-	e, err := s.Store.Load(id)
-	if err != nil {
-		http.Error(w, err.Error(), 400)
-		return
-	}
-	s.mu.Lock()
-	if ss := s.sess[id]; ss != nil && ss.Status0() != "closed" {
-		s.mu.Unlock()
-		http.Error(w, "环境已在运行", 409)
-		return
-	}
-	s.mu.Unlock()
-	ss, err := runner.Open(e, s.Settings, s.Local, s.Store.Save)
-	if err != nil {
-		http.Error(w, err.Error(), 502)
-		return
-	}
-	s.mu.Lock()
-	s.sess[id] = ss
-	s.mu.Unlock()
-	w.WriteHeader(204)
-}
-
-func (s *Server) close(w http.ResponseWriter, r *http.Request) {
-	s.mu.Lock()
-	ss := s.sess[r.PathValue("id")]
-	s.mu.Unlock()
-	if ss != nil {
-		ss.Close()
-	}
-	w.WriteHeader(204)
-}
+func (s *Server) running(id string) bool { return s.session(id) != nil }
 
 // CloseAll 主程序退出时关闭所有环境。
 func (s *Server) CloseAll() {
@@ -178,26 +163,20 @@ func (s *Server) CloseAll() {
 	}
 }
 
-func (s *Server) index(w http.ResponseWriter, r *http.Request) {
-	v, err := s.views()
-	if err != nil {
-		http.Error(w, err.Error(), 500)
-		return
-	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	indexTpl.Execute(w, v)
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json; charset=utf-8")
+	json.NewEncoder(w).Encode(v)
 }
 
-var indexTpl = template.Must(template.New("i").Parse(`<!doctype html><meta charset="utf-8"><title>envbrowser</title>
-<style>body{font:14px -apple-system,sans-serif;margin:24px;color:#222}table{border-collapse:collapse}td,th{border:1px solid #ddd;padding:6px 10px;text-align:left}
-.running{color:#0a7}.blocked{color:#c22}.err{color:#c22;font-size:12px}button{padding:3px 10px}</style>
-<h2>环境列表 <small style="font-weight:normal;color:#888">阶段 1 最小管理页 · 每 3 秒刷新</small></h2>
-<table><tr><th>ID</th><th>名称</th><th>账号</th><th>代理</th><th>录入出口</th><th>时区</th><th>状态</th><th>最近出口</th><th>中转端口</th><th></th></tr>
-{{range .}}<tr><td>{{.ID}}</td><td>{{.Name}}</td><td>{{.Account}}</td><td>{{.Proxy}}</td><td>{{.ExitIP}}</td><td>{{.Timezone}}</td>
-<td class="{{.Status}}">{{.Status}}{{if .LastErr}}<div class="err">{{.LastErr}}</div>{{end}}</td><td>{{.LastIP}}</td><td>{{if .Port}}{{.Port}}{{end}}</td>
-<td>{{if eq .Status "closed"}}<button onclick="act('{{.ID}}','open')">打开</button>{{else}}<button onclick="act('{{.ID}}','close')">关闭</button>{{end}}</td></tr>
-{{else}}<tr><td colspan="10">还没有环境，用命令行 envbrowser create 新建</td></tr>{{end}}</table>
-<script>
-async function act(id,a){const r=await fetch('/api/envs/'+id+'/'+a,{method:'POST'});if(!r.ok)alert(await r.text());location.reload()}
-setInterval(()=>location.reload(),3000)
-</script>`))
+func fail(w http.ResponseWriter, code int, err error) {
+	http.Error(w, err.Error(), code)
+}
+
+func readJSON(r *http.Request, v any) error {
+	dec := json.NewDecoder(http.MaxBytesReader(nil, r.Body, 1<<20))
+	dec.DisallowUnknownFields()
+	if err := dec.Decode(v); err != nil {
+		return fmt.Errorf("请求格式错误: %w", err)
+	}
+	return nil
+}

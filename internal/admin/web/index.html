@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="zh-CN">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>游龙 · 环境管理</title>
+<style>
+:root{--fg:#1f2328;--mut:#656d76;--line:#d0d7de;--bg:#fff;--bg2:#f6f8fa;--blue:#0969da;--ok-bg:#dafbe1;--ok:#116329;--bad-bg:#ffebe9;--bad:#a40e26;--off-bg:#eaeef2;--warn-bg:#fff8c5;--warn:#7d4e00}
+*{box-sizing:border-box}
+body{margin:0;font:14px/1.6 -apple-system,BlinkMacSystemFont,"PingFang SC",sans-serif;color:var(--fg);background:var(--bg2)}
+header{display:flex;gap:20px;align-items:center;padding:10px 24px;background:var(--bg);border-bottom:1px solid var(--line)}
+header b{font-size:16px}
+header a{color:var(--mut);text-decoration:none;cursor:pointer}
+header a.on{color:var(--blue);font-weight:600}
+main{max-width:1180px;margin:16px auto;padding:0 16px}
+.card{background:var(--bg);border:1px solid var(--line);border-radius:8px;padding:16px 20px;margin-bottom:16px}
+.warn{background:var(--warn-bg);color:var(--warn);border-radius:6px;padding:6px 12px;margin-bottom:12px}
+.err{color:var(--bad);font-size:12px;white-space:pre-wrap}
+.mut{color:var(--mut);font-size:12px}
+table{width:100%;border-collapse:collapse}
+th,td{border-bottom:1px solid var(--line);padding:7px 6px;text-align:left;vertical-align:top}
+th{color:var(--mut);font-weight:500;font-size:12px}
+.pill{font-size:12px;padding:1px 9px;border-radius:10px;white-space:nowrap}
+.running{background:var(--ok-bg);color:var(--ok)}.blocked{background:var(--bad-bg);color:var(--bad)}
+.closed{background:var(--off-bg);color:var(--mut)}.starting{background:var(--warn-bg);color:var(--warn)}
+button{font:inherit;font-size:12px;padding:3px 10px;border:1px solid var(--line);border-radius:6px;background:var(--bg);cursor:pointer;margin:0 2px 2px 0}
+button:hover{background:var(--bg2)}button.pri{background:var(--blue);border-color:var(--blue);color:#fff}
+button.danger{color:var(--bad)}button:disabled{opacity:.5;cursor:default}
+input,select{font:inherit;padding:4px 8px;border:1px solid var(--line);border-radius:6px;width:100%;background:var(--bg)}
+input:disabled,select:disabled{background:var(--bg2);color:var(--mut)}
+label{display:block;color:var(--mut);font-size:12px}
+.g{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px 14px}
+.span2{grid-column:span 2}.span4{grid-column:span 4}
+h3{margin:18px 0 8px;font-size:14px}
+.pw{display:flex;gap:4px}.pw input{flex:1}
+.chips label{display:inline-flex;align-items:center;gap:4px;margin:3px 10px 3px 0;color:var(--fg);font-size:13px}
+.chips input{width:auto}
+.bar{display:flex;gap:8px;align-items:center;margin-bottom:10px}
+.bar input{flex:1}.bar select{width:auto}
+pre{background:var(--bg2);padding:10px;border-radius:6px;max-height:420px;overflow:auto;font-size:12px;white-space:pre-wrap}
+.ok-t{color:var(--ok)}.bad-t{color:var(--bad)}
+#toast{position:fixed;right:20px;bottom:20px;max-width:420px;background:#24292f;color:#fff;padding:10px 14px;border-radius:8px;display:none;white-space:pre-wrap}
+</style>
+<header>
+  <b>游龙</b>
+  <a data-nav="list">环境</a>
+  <a data-nav="templates">模板</a>
+  <a data-nav="settings">设置</a>
+  <span style="margin-left:auto"><button class="pri" data-nav="new">+ 新建环境</button></span>
+</header>
+<main>
+  <div id="testmode" class="warn" hidden></div>
+  <div id="view"></div>
+</main>
+<div id="toast"></div>
+<script src="/app.js"></script>
+</html>
