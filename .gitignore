@@ -1,0 +1,15 @@
+# 本地工具链（Go、Chromium），体积大，不进仓库
+.toolchain/
+
+# 编译产物
+/bin/
+
+# 环境数据含明文密码和 Cookie，绝不进仓库
+BrowserEnvs/
+*.env.json
+env.json
+
+# 文档备份
+docs/.*.bak-*
+
+.DS_Store

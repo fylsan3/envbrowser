@@ -1,0 +1,669 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>浏览器项目：需求规格 v1</title>
+<style>
+:root{--fg:#1f2328;--muted:#5f6368;--line:#d0d7de;--bg2:#f6f8fa;--blue:#185FA5;--blue-bg:#E6F1FB;--teal:#0F6E56;--teal-bg:#E1F5EE;--amber:#854F0B;--amber-bg:#FAEEDA;--red:#A32D2D;--red-bg:#FCEBEB}
+*{box-sizing:border-box}
+body{margin:0;font-family:-apple-system,BlinkMacSystemFont,"PingFang SC","Helvetica Neue",sans-serif;color:var(--fg);background:#fff;line-height:1.7;font-size:15px}
+.wrap{display:flex;max-width:1280px;margin:0 auto}
+nav{position:sticky;top:0;align-self:flex-start;width:220px;height:100vh;overflow:auto;padding:28px 14px;border-right:1px solid var(--line);font-size:13px}
+nav a{display:block;color:var(--muted);text-decoration:none;padding:4px 8px;border-radius:6px}
+nav a:hover{background:var(--bg2);color:var(--fg)}
+main{flex:1;padding:32px 48px 80px;min-width:0}
+h1{font-size:26px;margin:0 0 6px}
+h2{font-size:20px;margin:44px 0 12px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+h3{font-size:16px;margin:24px 0 8px}
+.sub{color:var(--muted);font-size:13px}
+table{border-collapse:collapse;width:100%;margin:12px 0;font-size:14px}
+th,td{border:1px solid var(--line);padding:8px 10px;text-align:left;vertical-align:top}
+th{background:var(--bg2);font-weight:600}
+code{font-family:SFMono-Regular,Menlo,monospace;font-size:13px;background:var(--bg2);padding:1px 5px;border-radius:4px}
+pre{background:var(--bg2);border:1px solid var(--line);border-radius:8px;padding:14px;overflow:auto;font-size:13px;line-height:1.55}
+pre code{background:none;padding:0}
+.note{border-left:4px solid var(--amber);background:var(--amber-bg);padding:10px 14px;border-radius:6px;margin:14px 0}
+.warn{border-left:4px solid var(--red);background:var(--red-bg);padding:10px 14px;border-radius:6px;margin:14px 0}
+.ok{border-left:4px solid var(--teal);background:var(--teal-bg);padding:10px 14px;border-radius:6px;margin:14px 0}
+.tag{display:inline-block;font-size:12px;padding:0 6px;border-radius:4px;background:var(--amber-bg);color:var(--amber)}
+.p1{display:inline-block;font-size:12px;padding:0 6px;border-radius:4px;background:var(--teal-bg);color:var(--teal)}
+.p2{display:inline-block;font-size:12px;padding:0 6px;border-radius:4px;background:var(--blue-bg);color:var(--blue)}
+figure{margin:18px 0;border:1px solid var(--line);border-radius:10px;padding:16px;background:#fff}
+figcaption{font-size:13px;color:var(--muted);margin-top:8px;text-align:center}
+svg{width:100%;height:auto;display:block}
+svg text{font-family:-apple-system,"PingFang SC",sans-serif}
+@media (max-width:900px){nav{display:none}main{padding:20px}}
+@media print{nav{display:none}main{padding:0}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<nav>
+<a href="#s0">0. 目标与范围</a>
+<a href="#s1">1. 核心规则</a>
+<a href="#s2">2. 关键决定</a>
+<a href="#s3">3. 整体架构</a>
+<a href="#s4">4. 积木结构</a>
+<a href="#s5">5. 网络积木</a>
+<a href="#s6">6. 多环境并行</a>
+<a href="#s7">7. 启动流程</a>
+<a href="#s8">8. 指纹积木</a>
+<a href="#s9">9. 检测积木</a>
+<a href="#s10">10. 数据结构</a>
+<a href="#s11">11. 管理页面</a>
+<a href="#s12">12. 实施与验收</a>
+<a href="#s13">13. 风险与限制</a>
+</nav>
+<main>
+
+<h1>浏览器项目：需求规格 v1</h1>
+<div class="sub">更新：2026-11-05 17:10（第 3 版：本机隔离、检测页与测试模式、管理页面令牌、公共回显服务轮换） · 运行平台：macOS · 基于《需求与设计草案.md》整理（草案原文未改动）· 标 <span class="tag">默认</span> 的条目为代定默认值，可直接修改</div>
+
+<!-- ============ 0 ============ -->
+<h2 id="s0">0. 目标与范围</h2>
+<p><b>目标：</b>在一台 Mac 上管理多套相互隔离的浏览器环境。使用者<b>手动</b>打开环境、<b>手动</b>访问页面、<b>手动</b>填写注册信息。工具只负责三件事：</p>
+<ol>
+<li><b>隔离</b>：每个环境的数据、设备指纹、网络出口互不相通。</li>
+<li><b>网络安全</b>：每个环境只走自己绑定的代理，代理失效即断网。</li>
+<li><b>检测</b>：核对每个环境实际呈现的指纹和网络特征是否符合配置、是否存在泄露、环境之间是否可被关联。</li>
+</ol>
+
+<div class="note">
+<b>不在范围内（明确不做）</b>
+<ul style="margin:6px 0">
+<li>自动注册、自动填表、批量操作、脚本控制页面。</li>
+<li>验证码识别或绕过、短信接码对接。</li>
+<li>模拟鼠标轨迹、操作节奏等行为特征。</li>
+</ul>
+使用者需自行遵守所访问平台的服务条款。
+</div>
+
+<div class="warn">
+<b>关于“隐藏指纹”</b>
+<ul style="margin:6px 0">
+<li>禁用或清空指纹本身就是异常特征。本项目的做法是给每个环境一套<b>像真机、前后自洽、长期稳定</b>的值。</li>
+<li>验收以本地检测页和公开检测页的结果为准，不承诺任何检测方案都无法识别。</li>
+<li>在同一台 Mac 上只用启动参数时，所有环境的 Canvas、WebGL、音频指纹相同。要让每个环境指纹不同，必须完成第二阶段的内核积木。</li>
+</ul>
+</div>
+
+<!-- ============ 1 ============ -->
+<h2 id="s1">1. 核心规则</h2>
+<figure>
+<svg viewBox="0 0 860 160" role="img" aria-label="一个环境等于一个账号、一套设备指纹、一条代理">
+<rect x="10" y="40" width="190" height="72" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="105" y="70" text-anchor="middle" font-size="16" font-weight="600" fill="#085041">环境</text>
+<text x="105" y="93" text-anchor="middle" font-size="12" fill="#0F6E56">独立数据目录</text>
+<text x="220" y="82" text-anchor="middle" font-size="22" fill="#5f6368">=</text>
+<rect x="240" y="40" width="190" height="72" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="335" y="70" text-anchor="middle" font-size="16" font-weight="600" fill="#0C447C">账号</text>
+<text x="335" y="93" text-anchor="middle" font-size="12" fill="#185FA5">账号名 · 备注</text>
+<text x="450" y="82" text-anchor="middle" font-size="22" fill="#5f6368">=</text>
+<rect x="470" y="40" width="170" height="72" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="555" y="70" text-anchor="middle" font-size="16" font-weight="600" fill="#0C447C">设备指纹</text>
+<text x="555" y="93" text-anchor="middle" font-size="12" fill="#185FA5">模板 + 种子</text>
+<text x="660" y="82" text-anchor="middle" font-size="22" fill="#5f6368">=</text>
+<rect x="680" y="40" width="170" height="72" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="765" y="70" text-anchor="middle" font-size="16" font-weight="600" fill="#0C447C">代理</text>
+<text x="765" y="93" text-anchor="middle" font-size="12" fill="#185FA5">地址 · 用户名 · 密码</text>
+<text x="430" y="145" text-anchor="middle" font-size="13" fill="#5f6368">四者严格一对一，信息保存在同一个环境目录里；运行中不可更换</text>
+</svg>
+<figcaption>图 1　一个环境 = 一个账号 = 一套设备指纹 = 一条代理（含用户名密码）</figcaption>
+</figure>
+<ul>
+<li>代理一律带用户名密码认证，支持 <code>socks5h</code> 和 <code>http</code>。同一环境两种都配置时<b>优先 socks5h</b>。</li>
+<li>代理失效时该环境断网，<b>代码中不存在直连路径</b>。</li>
+<li>不安装任何浏览器插件；日常使用中不开启调试协议（CDP）端口。</li>
+<li>每个环境的全部信息（账号、代理及密码、指纹配置、浏览器数据）保存在一起，在管理页面可查看、可编辑。</li>
+<li>所有功能以“积木”形式加入，每块可单独开关、单独验证。</li>
+</ul>
+
+<!-- ============ 2 ============ -->
+<h2 id="s2">2. 关键决定</h2>
+<table>
+<tr><th style="width:44px">#</th><th style="width:150px">事项</th><th>决定</th><th style="width:230px">来源 / 理由</th></tr>
+<tr><td>D1</td><td>对应关系</td><td>环境 = 账号 = 设备指纹 = 代理，严格一对一</td><td>已确认</td></tr>
+<tr><td>D2</td><td>代理协议</td><td>socks5h 与 http 均带用户名密码认证；两者都配置时优先 socks5h</td><td>已确认</td></tr>
+<tr><td>D3</td><td>认证实现</td><td>主程序内置<b>本地中转模块</b>完成认证；浏览器只连本机端口</td><td>不装插件、不改内核，两种协议统一处理</td></tr>
+<tr><td>D4</td><td>多环境同时打开</td><td>支持。每个打开的环境独占一个本地端口，对应自己的上游代理</td><td>已确认需求，见第 6 节</td></tr>
+<tr><td>D5</td><td>插件</td><td>不使用任何浏览器插件</td><td>已确认；插件本身可被检测</td></tr>
+<tr><td>D6</td><td>信息存放</td><td>账号、代理及密码与环境配置存在同一目录；管理页面可见可改</td><td>已确认</td></tr>
+<tr><td>D7</td><td>出口 IP 校验</td><td>不做跨环境查重。实际出口 IP 必须<b>等于该环境录入的指定出口 IP</b>，且<b>不等于本机真实 IP</b>，否则不启动 / 立即断网</td><td>已确认（审核第 8 条）</td></tr>
+<tr><td>D8</td><td>技术栈</td><td><span class="tag">默认</span>Go 编写单个主程序：控制服务 + 本地中转 + 本地管理网页</td><td>单文件部署，并发代理性能好</td></tr>
+<tr><td>D9</td><td>浏览器</td><td>阶段一用<b>普通 Chromium 固定版本</b>（不用 Chrome for Testing，它会显示“仅用于自动化测试”提示）；阶段二换自编译 Chromium</td><td>版本锁定才能保证结果可重复</td></tr>
+<tr><td>D10</td><td>模板与种子</td><td>使用者提供 2–3 套 macOS 真机<b>模板</b>（脚本采集）；新建环境时程序轮换选模板，自动生成该环境的<b>种子</b>并永久绑定（见第 8.4 节）</td><td>已确认</td></tr>
+<tr><td>D11</td><td>特征修改方式</td><td>阶段一：启动参数与系统设置；阶段二：内核补丁。不使用脚本注入</td><td>注入有痕迹，且覆盖不到 Worker</td></tr>
+<tr><td>D12</td><td>数据根目录</td><td><span class="tag">默认</span><code>~/BrowserEnvs/</code></td><td>可在设置中修改</td></tr>
+<tr><td>D13</td><td>时区</td><td>环境里下拉选择，<b>默认日本东京</b>；预置美国、中国台湾、东南亚、法国、英国、新加坡等（见第 8.5 节）</td><td>已确认</td></tr>
+<tr><td>D14</td><td>出口 IP 复查</td><td>运行中定时复查，间隔<b>默认 10 秒内随机</b>，可在设置中调整</td><td>已确认（审核第 5 条）</td></tr>
+<tr><td>D15</td><td>pf 防火墙</td><td>保留，<b>做成开关</b>，默认关闭</td><td>已确认；需管理员权限</td></tr>
+<tr><td>D16</td><td>账号密码</td><td>保存账号登录密码，与代理密码同样明文存于 <code>env.json</code></td><td>已确认</td></tr>
+<tr><td>D17</td><td>本机隔离</td><td>环境浏览器访问本机及内网地址一律经中转拒绝；唯一例外为测试模式下的检测页端口</td><td>已确认（审核第 13 条）</td></tr>
+<tr><td>D18</td><td>检测页</td><td>放在本机、单独端口（默认 9000），仅测试模式下可访问；阶段 3 开发</td><td>已确认（审核第 1 条）</td></tr>
+<tr><td>D19</td><td>管理页面保护</td><td>访问令牌 + Host 校验 + Origin 校验</td><td>已确认（审核第 11 条）</td></tr>
+<tr><td>D20</td><td>中转端口</td><td>不做进程校验</td><td>已确认（审核第 12 条，不改）</td></tr>
+<tr><td>D21</td><td>出口 IP 回显</td><td>公共服务轮换，接受被限流风险</td><td>已确认</td></tr>
+</table>
+
+<!-- ============ 3 ============ -->
+<h2 id="s3">3. 整体架构</h2>
+<figure>
+<svg viewBox="0 0 860 470" role="img" aria-label="整体架构图">
+<defs><marker id="a" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f6368" stroke-width="1.5"/></marker></defs>
+
+<rect x="10" y="10" width="200" height="60" rx="10" fill="#F1EFE8" stroke="#888780"/>
+<text x="110" y="36" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">管理页面</text>
+<text x="110" y="56" text-anchor="middle" font-size="12" fill="#5F5E5A">127.0.0.1:8800</text>
+<line x1="110" y1="70" x2="110" y2="104" stroke="#5f6368" stroke-width="1.5" marker-end="url(#a)"/>
+
+<rect x="10" y="108" width="560" height="250" rx="14" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="26" y="132" font-size="14" font-weight="600" fill="#085041">主程序（一个 Go 可执行文件）</text>
+
+<rect x="30" y="146" width="520" height="56" rx="8" fill="#fff" stroke="#0F6E56"/>
+<text x="290" y="168" text-anchor="middle" font-size="13" font-weight="600" fill="#085041">核心层</text>
+<text x="290" y="188" text-anchor="middle" font-size="12" fill="#0F6E56">环境仓库 · 启动器 · 环境锁 · 配置版本迁移 · 日志</text>
+
+<rect x="30" y="214" width="250" height="60" rx="8" fill="#fff" stroke="#185FA5"/>
+<text x="155" y="238" text-anchor="middle" font-size="13" font-weight="600" fill="#0C447C">网络积木</text>
+<text x="155" y="258" text-anchor="middle" font-size="12" fill="#185FA5">中转 · 断网保护 · 出口校验</text>
+
+<rect x="300" y="214" width="250" height="60" rx="8" fill="#fff" stroke="#185FA5"/>
+<text x="425" y="238" text-anchor="middle" font-size="13" font-weight="600" fill="#0C447C">指纹积木</text>
+<text x="425" y="258" text-anchor="middle" font-size="12" fill="#185FA5">时区 · 语言 · UA · Canvas …</text>
+
+<rect x="30" y="286" width="250" height="60" rx="8" fill="#fff" stroke="#185FA5"/>
+<text x="155" y="310" text-anchor="middle" font-size="13" font-weight="600" fill="#0C447C">检测积木</text>
+<text x="155" y="330" text-anchor="middle" font-size="12" fill="#185FA5">检测页 · 对比报告</text>
+
+<rect x="300" y="286" width="250" height="60" rx="8" fill="#fff" stroke="#185FA5"/>
+<text x="425" y="310" text-anchor="middle" font-size="13" font-weight="600" fill="#0C447C">界面积木</text>
+<text x="425" y="330" text-anchor="middle" font-size="12" fill="#185FA5">本地管理网页</text>
+
+<rect x="640" y="108" width="210" height="110" rx="10" fill="#F1EFE8" stroke="#888780"/>
+<text x="745" y="136" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">环境数据目录</text>
+<text x="745" y="160" text-anchor="middle" font-size="12" fill="#5F5E5A">~/BrowserEnvs/env-xxxx/</text>
+<text x="745" y="180" text-anchor="middle" font-size="12" fill="#5F5E5A">env.json + 浏览器数据</text>
+<text x="745" y="200" text-anchor="middle" font-size="12" fill="#5F5E5A">每个环境一份</text>
+<line x1="570" y1="163" x2="636" y2="163" stroke="#5f6368" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="603" y="155" text-anchor="middle" font-size="11" fill="#5f6368">读写</text>
+
+<rect x="640" y="250" width="210" height="96" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="745" y="278" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Chromium 进程 ×N</text>
+<text x="745" y="302" text-anchor="middle" font-size="12" fill="#185FA5">共享一份程序</text>
+<text x="745" y="322" text-anchor="middle" font-size="12" fill="#185FA5">每进程一个数据目录</text>
+<line x1="570" y1="298" x2="636" y2="298" stroke="#5f6368" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="603" y="290" text-anchor="middle" font-size="11" fill="#5f6368">启动</text>
+
+<line x1="745" y1="346" x2="745" y2="392" stroke="#5f6368" stroke-width="1.5" marker-end="url(#a)"/>
+<text x="755" y="374" font-size="11" fill="#5f6368">只能连 127.0.0.1</text>
+<line x1="155" y1="358" x2="155" y2="392" stroke="#5f6368" stroke-width="1.5" marker-end="url(#a)"/>
+
+<rect x="10" y="396" width="840" height="60" rx="10" fill="#FAEEDA" stroke="#854F0B"/>
+<text x="430" y="422" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">本地中转 → 各环境绑定的上游代理（socks5h / http，均带用户名密码）→ 互联网</text>
+<text x="430" y="442" text-anchor="middle" font-size="12" fill="#854F0B">macOS pf 防火墙：浏览器进程除本机中转端口外一律禁止外连</text>
+</svg>
+<figcaption>图 2　整体架构：一个主程序管理多个 Chromium 进程，所有流量经本地中转出网</figcaption>
+</figure>
+
+<h2 id="s4">4. 积木结构</h2>
+<p>核心层只负责环境的增删改查、启动关闭和加锁，不包含任何具体特征。每项功能都是一块积木，统一实现以下接口：</p>
+<table>
+<tr><th style="width:220px">方法</th><th>作用</th></tr>
+<tr><td><code>Name()</code></td><td>积木名，对应 <code>env.json</code> 中 <code>modules</code> 的键</td></tr>
+<tr><td><code>Validate(env)</code></td><td>启动前检查：本积木配置是否合法、是否与其他积木矛盾（如 UA 写 Windows 而模板是 Mac）</td></tr>
+<tr><td><code>Apply(env)</code></td><td>输出启动参数、进程环境变量、需写入数据目录的文件</td></tr>
+<tr><td><code>Verify(env, 读取结果)</code></td><td>启动后核对实际值，返回通过 / 失败及原因</td></tr>
+<tr><td><code>enabled</code></td><td>在每个环境的配置里单独开关；关闭即保持浏览器原生行为</td></tr>
+</table>
+<figure>
+<svg viewBox="0 0 860 220" role="img" aria-label="积木生命周期">
+<defs><marker id="b" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f6368" stroke-width="1.5"/></marker></defs>
+<rect x="10" y="30" width="180" height="64" rx="10" fill="#F1EFE8" stroke="#888780"/>
+<text x="100" y="58" text-anchor="middle" font-size="14" font-weight="600" fill="#2C2C2A">读取 env.json</text>
+<text x="100" y="78" text-anchor="middle" font-size="12" fill="#5F5E5A">按 modules 加载积木</text>
+<line x1="190" y1="62" x2="226" y2="62" stroke="#5f6368" stroke-width="1.5" marker-end="url(#b)"/>
+<rect x="230" y="30" width="180" height="64" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="320" y="58" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Validate</text>
+<text x="320" y="78" text-anchor="middle" font-size="12" fill="#185FA5">任一失败 → 不启动</text>
+<line x1="410" y1="62" x2="446" y2="62" stroke="#5f6368" stroke-width="1.5" marker-end="url(#b)"/>
+<rect x="450" y="30" width="180" height="64" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="540" y="58" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Apply</text>
+<text x="540" y="78" text-anchor="middle" font-size="12" fill="#185FA5">合并参数后启动</text>
+<line x1="630" y1="62" x2="666" y2="62" stroke="#5f6368" stroke-width="1.5" marker-end="url(#b)"/>
+<rect x="670" y="30" width="180" height="64" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="760" y="58" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">Verify</text>
+<text x="760" y="78" text-anchor="middle" font-size="12" fill="#0F6E56">写入检测报告</text>
+<rect x="10" y="130" width="840" height="64" rx="10" fill="#fff" stroke="#d0d7de" stroke-dasharray="5 4"/>
+<text x="430" y="158" text-anchor="middle" font-size="13" font-weight="600" fill="#1f2328">新增一项功能 = 新增一块积木 + 一条检测用例</text>
+<text x="430" y="179" text-anchor="middle" font-size="12" fill="#5f6368">不修改核心层；积木之间只通过 env.json 和 Validate 规则发生联系</text>
+</svg>
+<figcaption>图 3　每块积木的生命周期</figcaption>
+</figure>
+
+<h2 id="s5">5. 网络积木</h2>
+
+<h3>5.1 本地中转</h3>
+<figure>
+<svg viewBox="0 0 860 200" role="img" aria-label="单个环境的代理链路">
+<defs><marker id="c" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f6368" stroke-width="1.5"/></marker></defs>
+<rect x="10" y="40" width="170" height="70" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="95" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">Chromium</text>
+<text x="95" y="92" text-anchor="middle" font-size="12" fill="#185FA5">环境 A</text>
+<line x1="180" y1="75" x2="296" y2="75" stroke="#5f6368" stroke-width="1.5" marker-end="url(#c)"/>
+<text x="238" y="62" text-anchor="middle" font-size="11" fill="#5f6368">socks5://127.0.0.1:20001</text>
+<text x="238" y="96" text-anchor="middle" font-size="11" fill="#5f6368">无认证 · 只发域名</text>
+<rect x="300" y="40" width="200" height="70" rx="10" fill="#FAEEDA" stroke="#854F0B"/>
+<text x="400" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#633806">本地中转</text>
+<text x="400" y="92" text-anchor="middle" font-size="12" fill="#854F0B">注入用户名密码</text>
+<line x1="500" y1="75" x2="636" y2="75" stroke="#5f6368" stroke-width="1.5" marker-end="url(#c)"/>
+<text x="568" y="62" text-anchor="middle" font-size="11" fill="#5f6368">socks5h 用户名密码认证</text>
+<text x="568" y="96" text-anchor="middle" font-size="11" fill="#5f6368">或 http CONNECT + Basic</text>
+<rect x="640" y="40" width="210" height="70" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="745" y="70" text-anchor="middle" font-size="14" font-weight="600" fill="#085041">上游代理 A</text>
+<text x="745" y="92" text-anchor="middle" font-size="12" fill="#0F6E56">远端解析域名</text>
+<rect x="300" y="135" width="200" height="44" rx="8" fill="#FCEBEB" stroke="#A32D2D"/>
+<text x="400" y="162" text-anchor="middle" font-size="12" fill="#791F1F">上游失败 → 断开，不直连</text>
+<line x1="400" y1="110" x2="400" y2="131" stroke="#A32D2D" stroke-width="1.5" marker-end="url(#c)"/>
+</svg>
+<figcaption>图 4　单个环境的代理链路：认证只发生在中转与上游之间</figcaption>
+</figure>
+<ul>
+<li>中转只监听 <code>127.0.0.1</code>；每个打开的环境分配一个独立端口，<span class="tag">默认</span>端口范围 <code>20001–20999</code>。</li>
+<li>上游类型：<code>socks5h</code>、<code>http</code>，<b>都必须带用户名密码</b>。同一环境两种都配置时优先 socks5h；socks5h 连接失败<b>不会</b>自动切换到 http（避免出口 IP 变化），需在管理页面手动切换。</li>
+<li><b>域名原样转发给上游解析</b>，中转进程内不做任何 DNS 查询。</li>
+<li>上游连接失败、认证失败、超时：<b>直接断开浏览器侧连接</b>，记录日志并在管理页面提示。代码中不实现直连分支。</li>
+<li>运行中不可更换上游；修改代理须关闭环境后编辑再启动。</li>
+<li>浏览器侧只看到 <code>127.0.0.1</code>，拿不到上游地址和密码。</li>
+</ul>
+
+<h3>5.2 断网保护（三层）</h3>
+<table>
+<tr><th style="width:110px">层</th><th>措施</th><th style="width:230px">作用</th></tr>
+<tr><td>浏览器</td><td><code>--proxy-server=socks5://127.0.0.1:端口</code><br><code>--force-webrtc-ip-handling-policy=disable_non_proxied_udp</code><br>关闭 QUIC；关闭后台组件更新、安全浏览、指标上报、预连接等后台请求<br><code>--proxy-bypass-list=&lt;-loopback&gt;</code>：访问本机地址也必须进中转</td><td>让正常流量都进中转，堵 WebRTC 和后台请求</td></tr>
+<tr><td>中转（本机隔离）</td><td>目标为本机地址（<code>127.0.0.0/8</code>、<code>localhost</code>、<code>::1</code>）或内网地址（<code>10/8</code>、<code>172.16/12</code>、<code>192.168/16</code>、<code>169.254/16</code>、<code>fc00::/7</code>）的请求<b>一律拒绝，返回同一种错误</b>；目标域名解析结果的判断交给上游，中转只按字面地址拦截。<br>唯一例外：<b>测试模式</b>开启时放行本机检测页端口（见第 9 节）</td><td>网页脚本扫描本机端口时，所有端口表现一致，无法据此关联各环境（审核第 13 条）</td></tr>
+<tr><td>系统（可选）</td><td><b>开关，默认关闭。</b>使用 macOS 自带的 pf 包过滤器（<code>/etc/pf.conf</code> / <code>pfctl</code>，不是“系统设置”里的防火墙开关）。开启后：浏览器进程只允许连本机中转端口，其余外连全部丢弃（检测页请求也经中转，无需单独放行）。<br><b>可行性待阶段一验证</b>：按进程 / 用户区分流量在 macOS 上的实现方式（专用用户运行 GUI、pf 的 user 规则）需实测</td><td>兜底：浏览器有遗漏时也出不了网。需要管理员权限</td></tr>
+<tr><td>中转</td><td>上游失败即断开（5.1）</td><td>代理挂掉时不会回退直连</td></tr>
+</table>
+
+<h3>5.3 出口校验</h3>
+<p><b>启动时（浏览器启动之前执行）：</b></p>
+<ol>
+<li>经中转请求<b>公共 IP 回显服务</b>，取实际出口 IP（服务列表见下方“回显服务”）。</li>
+<li>实际出口 IP 必须<b>等于</b> <code>env.json</code> 中录入的 <code>exit_ip</code>（默认填代理地址，出口与入口不同时手动修改）。</li>
+<li>实际出口 IP 必须<b>不等于</b>本机真实 IP（本机 IP 在主程序启动时直连获取一次，仅主程序使用）。</li>
+<li>明文 http 回显检查：出现 <code>Via</code> / <code>X-Forwarded-For</code> / <code>Forwarded</code> / 本机真实 IP → 标记代理不合格。</li>
+<li>以上任一不满足 → 不启动，提示原因。不做跨环境查重。</li>
+</ol>
+<p><b>运行中（定时复查）：</b></p>
+<ul>
+<li>每个运行中的环境独立复查，间隔<b>默认在 1–10 秒内随机</b>；设置中可改为固定秒数或其他随机范围（最小 1 秒）。</li>
+<li>出口 IP 变化、或等于本机 IP → <b>立即断开该环境网络</b>，管理页面标红并记录日志。</li>
+<li>复查请求失败的计数规则：某个回显服务失败 → 立即换下一个服务重试，<b>不计入失败次数</b>；列表中<b>全部服务</b>都失败才算一次失败，<b>连续 3 次</b>失败则断网。出口 IP 变化不等待，立即断网。</li>
+<li>流量估算：每次约 1KB，平均 5 秒一次时单环境约 17MB/天。</li>
+</ul>
+<p><b>回显服务：</b></p>
+<ul>
+<li>使用公共服务轮换，不自建服务器。<span class="tag">默认</span>列表：Cloudflare <code>/cdn-cgi/trace</code>、<code>api.ipify.org</code>、<code>icanhazip.com</code>、<code>ifconfig.me</code>；列表存于 <code>settings.json</code>，可增删。</li>
+<li>每次复查按顺序轮换起点，分散请求压力。</li>
+<li>已知风险（使用者已接受）：高频请求可能被公共服务限流或封禁；若实测频繁失败，调大复查间隔。</li>
+<li>明文 http 请求头检查使用支持 http 的回显服务（如 <code>http://httpbin.org/headers</code>），只在启动时和“测试代理”时执行，不参与定时复查。</li>
+<li>WebRTC 泄露检查使用公共 STUN 服务器（如 <code>stun.l.google.com:19302</code>），在检测页中执行。</li>
+</ul>
+
+<h2 id="s6">6. 多环境并行</h2>
+<p>同时打开多个环境、各挂各的代理，<b>可以实现</b>，这是本地中转的设计初衷。</p>
+<figure>
+<svg viewBox="0 0 860 300" role="img" aria-label="多环境并行代理示意">
+<defs><marker id="d" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f6368" stroke-width="1.5"/></marker></defs>
+<rect x="10" y="20" width="160" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="90" y="44" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">环境 A</text>
+<text x="90" y="63" text-anchor="middle" font-size="12" fill="#185FA5">账号 A</text>
+<rect x="10" y="120" width="160" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="90" y="144" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">环境 B</text>
+<text x="90" y="163" text-anchor="middle" font-size="12" fill="#185FA5">账号 B</text>
+<rect x="10" y="220" width="160" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="90" y="244" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">环境 C</text>
+<text x="90" y="263" text-anchor="middle" font-size="12" fill="#185FA5">账号 C</text>
+
+<line x1="170" y1="48" x2="326" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#d)"/>
+<text x="248" y="40" text-anchor="middle" font-size="11" fill="#5f6368">:20001</text>
+<line x1="170" y1="148" x2="326" y2="148" stroke="#5f6368" stroke-width="1.5" marker-end="url(#d)"/>
+<text x="248" y="140" text-anchor="middle" font-size="11" fill="#5f6368">:20002</text>
+<line x1="170" y1="248" x2="326" y2="248" stroke="#5f6368" stroke-width="1.5" marker-end="url(#d)"/>
+<text x="248" y="240" text-anchor="middle" font-size="11" fill="#5f6368">:20003</text>
+
+<rect x="330" y="20" width="200" height="256" rx="12" fill="#FAEEDA" stroke="#854F0B"/>
+<text x="430" y="140" text-anchor="middle" font-size="15" font-weight="600" fill="#633806">本地中转</text>
+<text x="430" y="162" text-anchor="middle" font-size="12" fill="#854F0B">端口 → 上游 固定映射</text>
+
+<line x1="530" y1="48" x2="666" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#d)"/>
+<line x1="530" y1="148" x2="666" y2="148" stroke="#5f6368" stroke-width="1.5" marker-end="url(#d)"/>
+<line x1="530" y1="248" x2="666" y2="248" stroke="#5f6368" stroke-width="1.5" marker-end="url(#d)"/>
+
+<rect x="670" y="20" width="180" height="56" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="760" y="44" text-anchor="middle" font-size="13" font-weight="600" fill="#085041">代理 A · socks5h</text>
+<text x="760" y="63" text-anchor="middle" font-size="12" fill="#0F6E56">用户名A / 密码A</text>
+<rect x="670" y="120" width="180" height="56" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="760" y="144" text-anchor="middle" font-size="13" font-weight="600" fill="#085041">代理 B · http</text>
+<text x="760" y="163" text-anchor="middle" font-size="12" fill="#0F6E56">用户名B / 密码B</text>
+<rect x="670" y="220" width="180" height="56" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="760" y="244" text-anchor="middle" font-size="13" font-weight="600" fill="#085041">代理 C · socks5h</text>
+<text x="760" y="263" text-anchor="middle" font-size="12" fill="#0F6E56">用户名C / 密码C</text>
+</svg>
+<figcaption>图 5　三个环境同时打开：各占一个本地端口，各走自己的代理</figcaption>
+</figure>
+<table>
+<tr><th style="width:200px">问题</th><th>设计</th></tr>
+<tr><td>能同时开几个</td><td>中转不设上限，Go 处理上百个并发连接无压力。实际上限取决于 Mac 内存（每个 Chromium 约 300MB–1GB）。<span class="tag">默认</span>同时打开超过 10 个时在页面给出内存提示，不强制拦截。</td></tr>
+<tr><td>会不会串号</td><td>端口与上游的映射在启动时固定写入，运行中只读，不可修改。中转按“本地监听端口”查映射，不看请求内容。</td></tr>
+<tr><td>一个代理挂了</td><td>只影响对应环境，该环境断网并在页面标红；其他环境不受影响。</td></tr>
+<tr><td>端口回收</td><td>环境关闭或进程崩溃时释放端口；下次启动重新分配（端口号不参与指纹）。</td></tr>
+<tr><td>同一环境开两次</td><td>环境锁禁止。崩溃后残留的锁通过检测进程是否存活自动清除。</td></tr>
+</table>
+
+<h2 id="s7">7. 启动流程</h2>
+<figure>
+<svg viewBox="0 0 860 240" role="img" aria-label="环境启动流程">
+<defs><marker id="e" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M2 1L8 5L2 9" fill="none" stroke="#5f6368" stroke-width="1.5"/></marker></defs>
+<g font-size="13">
+<rect x="10" y="20" width="150" height="56" rx="10" fill="#F1EFE8" stroke="#888780"/>
+<text x="85" y="44" text-anchor="middle" font-weight="600" fill="#2C2C2A">① 点击启动</text>
+<text x="85" y="63" text-anchor="middle" font-size="12" fill="#5F5E5A">加环境锁</text>
+<line x1="160" y1="48" x2="186" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
+<rect x="190" y="20" width="150" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="265" y="44" text-anchor="middle" font-weight="600" fill="#0C447C">② Validate</text>
+<text x="265" y="63" text-anchor="middle" font-size="12" fill="#185FA5">各积木自检</text>
+<line x1="340" y1="48" x2="366" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
+<rect x="370" y="20" width="150" height="56" rx="10" fill="#FAEEDA" stroke="#854F0B"/>
+<text x="445" y="44" text-anchor="middle" font-weight="600" fill="#633806">③ 起中转端口</text>
+<text x="445" y="63" text-anchor="middle" font-size="12" fill="#854F0B">连上游并认证</text>
+<line x1="520" y1="48" x2="546" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
+<rect x="550" y="20" width="150" height="56" rx="10" fill="#FAEEDA" stroke="#854F0B"/>
+<text x="625" y="44" text-anchor="middle" font-weight="600" fill="#633806">④ 出口校验</text>
+<text x="625" y="63" text-anchor="middle" font-size="12" fill="#854F0B">IP · 重复 · 请求头</text>
+<line x1="700" y1="48" x2="726" y2="48" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
+<rect x="730" y="20" width="120" height="56" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="790" y="44" text-anchor="middle" font-weight="600" fill="#0C447C">⑤ Apply</text>
+<text x="790" y="63" text-anchor="middle" font-size="12" fill="#185FA5">启动 Chromium</text>
+<line x1="790" y1="76" x2="790" y2="126" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
+<rect x="640" y="130" width="210" height="56" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="745" y="154" text-anchor="middle" font-weight="600" fill="#085041">⑥ Verify（可选）</text>
+<text x="745" y="173" text-anchor="middle" font-size="12" fill="#0F6E56">打开检测页生成报告</text>
+<line x1="640" y1="158" x2="476" y2="158" stroke="#5f6368" stroke-width="1.5" marker-end="url(#e)"/>
+<rect x="250" y="130" width="222" height="56" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="361" y="154" text-anchor="middle" font-weight="600" fill="#085041">⑦ 交给使用者</text>
+<text x="361" y="173" text-anchor="middle" font-size="12" fill="#0F6E56">手动访问页面、手动填写</text>
+<rect x="10" y="130" width="200" height="56" rx="10" fill="#FCEBEB" stroke="#A32D2D"/>
+<text x="110" y="154" text-anchor="middle" font-weight="600" fill="#791F1F">任一步失败</text>
+<text x="110" y="173" text-anchor="middle" font-size="12" fill="#A32D2D">不启动 · 释放锁 · 提示原因</text>
+</g>
+<text x="430" y="222" text-anchor="middle" font-size="12" fill="#5f6368">②③④ 任一步失败都在浏览器启动之前，不会产生任何外网流量</text>
+</svg>
+<figcaption>图 6　环境启动流程</figcaption>
+</figure>
+
+<h2 id="s8">8. 指纹积木</h2>
+
+<h3>8.1 一致性规则（Validate 统一检查）</h3>
+<ul>
+<li>系统、UA、Client Hints、<code>navigator.platform</code>、字体集、WebGL 显卡信息必须指向<b>同一类真实设备</b>。</li>
+<li>时区、语言与出口 IP 所在地一致（不一致时提示，不强制）。</li>
+<li>屏幕尺寸、可用区域、像素比必须是设备模板里的真实组合。</li>
+<li>所有带随机性的项共用一个<b>环境种子</b>，种子写入 <code>env.json</code>，同一环境每次结果完全一致。</li>
+<li>主页面、iframe、Worker、Service Worker 读到的值必须相同。</li>
+</ul>
+
+<h3>8.2 积木清单</h3>
+<p><span class="p1">阶段一</span> 启动参数 / 系统设置即可完成　<span class="p2">阶段二</span> 需要自编译 Chromium 内核补丁</p>
+<table>
+<tr><th style="width:130px">积木</th><th>内容</th><th style="width:80px">阶段</th><th style="width:260px">实现方式</th></tr>
+<tr><td>数据隔离</td><td>Cookie、存储、缓存、登录状态</td><td><span class="p1">一</span></td><td>每环境独立 <code>--user-data-dir</code></td></tr>
+<tr><td>Cookie 加密</td><td>不弹钥匙串授权框。<b>注意：所有环境共用一个固定密钥，Cookie 等同明文</b>；环境间隔离依靠独立数据目录</td><td><span class="p1">一</span></td><td><span class="tag">默认</span><code>--use-mock-keychain</code></td></tr>
+<tr><td>时区</td><td>JS 时区、Date 偏移、<code>Intl</code> 时区名</td><td><span class="p1">一</span></td><td>首选进程环境变量 <code>TZ</code>，<b>需阶段一实测</b>；Mac 版不生效则改用内核积木</td></tr>
+<tr><td>语言</td><td>界面语言、<code>navigator.languages</code>、<code>Accept-Language</code></td><td><span class="p1">一</span></td><td><code>-AppleLanguages</code> + 数据目录偏好文件；三处分别验证</td></tr>
+<tr><td>窗口</td><td>窗口大小、位置</td><td><span class="p1">一</span></td><td>启动参数</td></tr>
+<tr><td>WebRTC</td><td>不泄露真实 IP 与内网 IP</td><td><span class="p1">一</span></td><td>启动参数（见 5.2）</td></tr>
+<tr><td>自动化痕迹</td><td><code>navigator.webdriver</code>、调试端口</td><td><span class="p1">一</span></td><td>不开远程调试端口，不加自动化参数</td></tr>
+<tr><td>UA + Client Hints</td><td>UA 字符串、<code>Sec-CH-UA*</code>、<code>userAgentData</code> 同步</td><td><span class="p2">二</span></td><td>内核统一从配置读取</td></tr>
+<tr><td>硬件参数</td><td>CPU 核数、内存、屏幕分辨率、像素比</td><td><span class="p2">二</span></td><td>内核</td></tr>
+<tr><td>Canvas</td><td>按种子的确定性扰动</td><td><span class="p2">二</span></td><td>内核：读取像素处加扰动</td></tr>
+<tr><td>WebGL / WebGPU</td><td>厂商、型号、参数、扩展列表、渲染结果</td><td><span class="p2">二</span></td><td>内核</td></tr>
+<tr><td>音频</td><td>AudioContext 输出</td><td><span class="p2">二</span></td><td>内核：确定性扰动</td></tr>
+<tr><td>字体</td><td>可用字体列表、测宽结果</td><td><span class="p2">二</span></td><td>内核：按模板过滤</td></tr>
+<tr><td>媒体设备</td><td>摄像头、麦克风、扬声器列表与 ID</td><td><span class="p2">二</span></td><td>内核</td></tr>
+<tr><td>语音列表</td><td><code>speechSynthesis</code> 声音列表</td><td><span class="p2">二</span></td><td>内核</td></tr>
+</table>
+
+<h3>8.3 内核补丁规范（阶段二）</h3>
+<ul>
+<li>每块积木一个独立补丁文件，只读取 <code>--fingerprint-profile=&lt;路径&gt;</code> 指向的配置。</li>
+<li><b>配置里没有某项 = 该项保持原生行为</b>，积木可单独关闭。</li>
+<li>修改全部在 C++ 层，JS 看到的仍是原生函数。</li>
+<li>保留沙箱与证书校验，不关闭任何安全特性。</li>
+<li><span class="tag">默认</span>每个 Chromium 稳定大版本发布后 2 周内完成补丁合并、编译和全量回归。</li>
+</ul>
+
+<h3>8.4 模板与种子</h3>
+<table>
+<tr><th style="width:110px"></th><th>模板</th><th>种子</th></tr>
+<tr><td>是什么</td><td>一台真 Mac 的整套硬件与浏览器参数</td><td>某个环境专属的最终指纹 = 模板 + 轻微改动</td></tr>
+<tr><td>来源</td><td>使用者用<b>采集脚本</b>在真 Mac 上采集，2–3 套</td><td>新建环境时<b>程序自动生成</b>，使用者无需操作</td></tr>
+<tr><td>可变性</td><td>只读</td><td>生成后与环境永久绑定；可手动“重新生成”</td></tr>
+<tr><td>数量</td><td>不设上限</td><td>每个环境一个，不与其他环境共用</td></tr>
+</table>
+<p><b>生成规则：</b></p>
+<ol>
+<li>新建环境时，从已启用的模板中<b>轮换</b>选取：优先选被使用次数最少的模板，次数相同时随机。</li>
+<li>以下项<b>保持模板原值</b>（改了会出现真机不存在的组合）：机型、系统版本、显卡厂商与型号、WebGL 参数与扩展、屏幕分辨率与像素比、CPU 核数、内存、字体列表、语音列表。</li>
+<li>以下项<b>由种子生成差异</b>：Canvas 扰动值、音频扰动值、媒体设备 ID、窗口尺寸（在模板屏幕范围内取常见值）。</li>
+<li>生成的种子写入该环境的 <code>env.json</code>，不同环境的种子不可相同。</li>
+<li>模板的硬件参数要到实施阶段 5（内核积木）才真正生效；阶段一至四网站读到的是本机真实硬件。</li>
+</ol>
+<p><b>模板采集脚本：</b></p>
+<ul>
+<li>提供一个独立的命令行脚本 <code>collect-template</code>（随主程序打包，可单独拷到其他 Mac 上运行）。</li>
+<li>运行方式：在要采集的真 Mac 上执行 <code>./collect-template --name mac-mini-m2</code>。</li>
+<li>脚本自动：调用本机已安装的 Chrome 以无头模式打开内置采集页 → 读取全部参数 → 同时读取系统信息（机型、系统版本、芯片、屏幕）→ 输出 <code>mac-mini-m2.template.json</code>。</li>
+<li>使用者把输出文件拷回，在管理页面“模板管理 → 导入”，或直接放进 <code>~/BrowserEnvs/templates/</code>。</li>
+<li>导入时校验：格式、必填项、与已有模板是否重复（重复则提示）。</li>
+<li>脚本会额外用有界面模式采集一次 WebGL/Canvas 并与无头模式对比，因为无头模式下显卡信息可能与日常使用不同；两者不一致时以有界面结果为准。</li>
+</ul>
+<p><b>模板管理页面：</b>模板列表、每个模板被几个环境使用、启用 / 停用（停用后不再被新环境选中，已绑定环境不受影响）、删除（有环境在用时禁止删除）。</p>
+
+<h3>8.5 时区与语言</h3>
+<ul>
+<li>新建 / 编辑环境时下拉选择时区，<b>默认 日本 · 东京</b>。</li>
+<li>选择时区后自动带出对应语言默认值，可单独修改。</li>
+<li>提供“按出口 IP 自动匹配”按钮：查离线 IP 归属地库，自动选中最接近的时区和语言。归属地库采用 GeoLite2（境外 IP 更准）。</li>
+<li>出口 IP 归属地与所选时区明显不符时，在页面提示，不强制拦截。</li>
+</ul>
+<table>
+<tr><th>地区</th><th>时区</th><th>默认语言</th></tr>
+<tr><td><b>日本 · 东京（默认）</b></td><td>Asia/Tokyo</td><td>ja-JP</td></tr>
+<tr><td>美国 · 东部（纽约）</td><td>America/New_York</td><td>en-US</td></tr>
+<tr><td>美国 · 中部（芝加哥）</td><td>America/Chicago</td><td>en-US</td></tr>
+<tr><td>美国 · 山地（丹佛）</td><td>America/Denver</td><td>en-US</td></tr>
+<tr><td>美国 · 西部（洛杉矶）</td><td>America/Los_Angeles</td><td>en-US</td></tr>
+<tr><td>中国台湾 · 台北</td><td>Asia/Taipei</td><td>zh-TW</td></tr>
+<tr><td>新加坡</td><td>Asia/Singapore</td><td>en-SG</td></tr>
+<tr><td>马来西亚 · 吉隆坡</td><td>Asia/Kuala_Lumpur</td><td>ms-MY</td></tr>
+<tr><td>泰国 · 曼谷</td><td>Asia/Bangkok</td><td>th-TH</td></tr>
+<tr><td>越南 · 胡志明市</td><td>Asia/Ho_Chi_Minh</td><td>vi-VN</td></tr>
+<tr><td>印度尼西亚 · 雅加达</td><td>Asia/Jakarta</td><td>id-ID</td></tr>
+<tr><td>菲律宾 · 马尼拉</td><td>Asia/Manila</td><td>en-PH</td></tr>
+<tr><td>英国 · 伦敦</td><td>Europe/London</td><td>en-GB</td></tr>
+<tr><td>法国 · 巴黎</td><td>Europe/Paris</td><td>fr-FR</td></tr>
+</table>
+<p class="sub">列表存于 <code>settings.json</code>，可自行增删。</p>
+
+<h2 id="s9">9. 检测积木</h2>
+<p><b>只在测试和验收时使用，日常使用不需要；实施阶段 3 再开发。</b></p>
+<h3>9.1 部署与访问</h3>
+<ul>
+<li>检测页由主程序在本机提供，<b>单独端口</b>，<span class="tag">默认</span><code>127.0.0.1:9000</code>；<b>不与管理页面（8800）共用端口</b>。</li>
+<li>环境浏览器访问检测页时，请求同样经过中转（<code>--proxy-bypass-list=&lt;-loopback&gt;</code>）。</li>
+<li><b>测试模式</b>：管理页面上的全局开关，<b>默认关闭</b>。
+  <ul>
+  <li>关闭时：中转拒绝一切本机和内网地址，检测页无法访问。</li>
+  <li>开启时：中转<b>只放行检测页这一个地址和端口</b>，其他本机端口、内网地址仍然拒绝。</li>
+  <li>开启期间管理页面顶部持续显示提醒；测试结束后手动关闭。</li>
+  </ul></li>
+</ul>
+<h3>9.2 检测内容</h3>
+<ul>
+<li>在主页面、iframe、Worker、Service Worker 中分别读取全部指纹项。</li>
+<li>报告每行：<b>检测项 / 配置目标值 / 实际读取值 / 读取位置 / 是否一致</b>。</li>
+<li>本机检测页<b>能测</b>：时区、语言、UA、屏幕、Canvas、WebGL、音频、字体、多位置一致性、WebRTC 候选地址（借助公共 STUN）、本机端口扫描测试（验证第 5.2 节本机隔离生效）。</li>
+<li>本机检测页<b>测不准</b>（未经代理出网）：出口 IP、代理是否篡改请求头 —— 改由中转在后台用公共回显服务检查（第 5.3 节）。</li>
+<li>跨环境比对：出口 IP 与各环境录入值一致；<b>指纹哈希互不相同这一项从实施阶段 5（内核积木完成）起才检查</b>，阶段一至四硬件类指纹必然相同。</li>
+<li>稳定性：同一环境重启 3 次，全部结果一致。</li>
+<li>报告保存在该环境目录的 <code>reports/</code> 下，按时间命名，可在管理页面查看历史。</li>
+</ul>
+
+<h2 id="s10">10. 数据结构</h2>
+<p>每套环境的全部信息（账号、代理及密码、指纹配置、浏览器数据、检测报告）<b>互相关联、保存在同一个目录</b>。复制或备份这个目录即可完整迁移一套环境。</p>
+<figure>
+<svg viewBox="0 0 860 300" role="img" aria-label="环境目录结构">
+<rect x="10" y="10" width="840" height="280" rx="14" fill="#F1EFE8" stroke="#888780"/>
+<text x="30" y="38" font-size="14" font-weight="600" fill="#2C2C2A">~/BrowserEnvs/</text>
+<rect x="30" y="52" width="380" height="224" rx="10" fill="#E1F5EE" stroke="#0F6E56"/>
+<text x="46" y="78" font-size="14" font-weight="600" fill="#085041">env-0001/（一个环境）</text>
+<rect x="46" y="90" width="348" height="40" rx="6" fill="#fff" stroke="#0F6E56"/>
+<text x="60" y="115" font-size="13" fill="#085041">env.json — 账号 · 代理及密码 · 指纹 · 积木开关</text>
+<rect x="46" y="138" width="348" height="40" rx="6" fill="#fff" stroke="#0F6E56"/>
+<text x="60" y="163" font-size="13" fill="#085041">browser/ — Chromium 用户数据（Cookie、缓存）</text>
+<rect x="46" y="186" width="348" height="40" rx="6" fill="#fff" stroke="#0F6E56"/>
+<text x="60" y="211" font-size="13" fill="#085041">reports/ — 历次检测报告</text>
+<rect x="46" y="234" width="348" height="30" rx="6" fill="#fff" stroke="#0F6E56"/>
+<text x="60" y="254" font-size="13" fill="#085041">env.lock — 运行时锁（关闭后删除）</text>
+<rect x="440" y="52" width="190" height="60" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="535" y="78" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">env-0002/</text>
+<text x="535" y="98" text-anchor="middle" font-size="12" fill="#185FA5">结构相同</text>
+<rect x="650" y="52" width="180" height="60" rx="10" fill="#E6F1FB" stroke="#185FA5"/>
+<text x="740" y="78" text-anchor="middle" font-size="14" font-weight="600" fill="#0C447C">env-0003/ …</text>
+<text x="740" y="98" text-anchor="middle" font-size="12" fill="#185FA5">数量不限</text>
+<rect x="440" y="130" width="390" height="60" rx="10" fill="#fff" stroke="#888780"/>
+<text x="635" y="156" text-anchor="middle" font-size="13" font-weight="600" fill="#2C2C2A">templates/</text>
+<text x="635" y="176" text-anchor="middle" font-size="12" fill="#5F5E5A">macOS 真机模板（脚本采集，只读，轮换使用）</text>
+<rect x="440" y="206" width="390" height="60" rx="10" fill="#fff" stroke="#888780"/>
+<text x="635" y="232" text-anchor="middle" font-size="13" font-weight="600" fill="#2C2C2A">settings.json · logs/</text>
+<text x="635" y="252" text-anchor="middle" font-size="12" fill="#5F5E5A">全局设置、Chromium 路径与版本、日志</text>
+</svg>
+<figcaption>图 7　数据目录结构：一个环境一个目录，信息集中保存</figcaption>
+</figure>
+
+<h3>env.json 示例</h3>
+<pre><code>{
+  "schema_version": 1,
+  "id": "env-0001",
+  "name": "环境A",
+  "created_at": "2026-11-05T15:30:00+08:00",
+
+  "account": {
+    "username": "填写账号",
+    "password": "账号登录密码",
+    "note": "备注"
+  },
+
+  "proxy": {
+    "primary": {
+      "type": "socks5h",
+      "host": "x.x.x.x",
+      "port": 1080,
+      "username": "代理用户名",
+      "password": "代理密码"
+    },
+    "secondary": {
+      "type": "http",
+      "host": "x.x.x.x",
+      "port": 6011,
+      "username": "代理用户名",
+      "password": "代理密码"
+    },
+    "active": "primary",
+    "exit_ip": "x.x.x.x"
+  },
+
+  "fingerprint": {
+    "template": "mac-mini-m2",
+    "seed": {
+      "canvas_noise": "程序生成",
+      "audio_noise": "程序生成",
+      "media_device_ids": "程序生成",
+      "window": { "width": 1440, "height": 900 }
+    },
+    "timezone": "Asia/Tokyo",
+    "languages": ["ja-JP", "ja"]
+  },
+
+  "modules": {
+    "timezone": true, "language": true, "window": true, "webrtc": true,
+    "ua_client_hints": false, "hardware": false, "canvas": false,
+    "webgl": false, "audio": false, "fonts": false,
+    "media_devices": false, "speech": false
+  },
+
+  "chromium_version": "锁定的版本号"
+}</code></pre>
+<div class="note">
+<ul style="margin:0">
+<li><code>secondary</code> 可省略；<code>active</code> 只能在环境关闭时修改，不会自动切换。</li>
+<li>阶段二的积木在内核补丁完成前默认为 <code>false</code>。</li>
+<li>密码按要求以明文保存在 <code>env.json</code> 中（D6），见第 13 节风险说明。</li>
+</ul>
+</div>
+
+<h2 id="s11">11. 管理页面</h2>
+<p>主程序启动后，在本机浏览器打开 <code>http://127.0.0.1:8800/?token=…</code>（<span class="tag">默认</span>端口，只监听本机）。</p>
+<p><b>访问保护（审核第 11 条）：</b></p>
+<ul>
+<li>主程序每次启动生成一个随机访问令牌，并自动用带令牌的链接打开管理页面；首次访问后令牌存入 Cookie（<code>HttpOnly</code>、<code>SameSite=Strict</code>）。</li>
+<li>所有页面和接口请求必须带有效令牌，否则返回 403。</li>
+<li>校验请求头 <code>Host</code>：只接受 <code>127.0.0.1:8800</code> 和 <code>localhost:8800</code>，防止 DNS 重绑定攻击。</li>
+<li>修改类接口（新建、编辑、删除、启动、关闭）只接受 POST，并校验 <code>Origin</code> 为本页面。</li>
+<li>环境浏览器本身无法访问 8800（第 5.2 节本机隔离），测试模式也不放行此端口。</li>
+</ul>
+<table>
+<tr><th style="width:150px">页面</th><th>功能</th></tr>
+<tr><td>环境列表</td><td>搜索（名称、账号、备注、代理地址）；显示状态（未打开 / 运行中 / 代理异常）、出口 IP、最近检测结果；启动、关闭、检测按钮</td></tr>
+<tr><td>新建 / 编辑环境</td><td>一个页面填完全部信息：账号与<b>登录密码</b>、代理（类型、地址、端口、用户名、<b>密码可见可改</b>、指定出口 IP）、时区（默认东京）、语言、积木开关。模板与种子自动分配，页面只显示结果，并提供“重新生成种子”按钮。“测试代理”按钮：认证 + 出口 IP + 请求头检查。“按出口 IP 自动匹配时区”按钮</td></tr>
+<tr><td>模板管理</td><td>导入采集脚本生成的模板文件；列表显示使用次数；启用 / 停用 / 删除</td></tr>
+<tr><td>环境详情</td><td>完整配置、本次运行的本地端口、检测报告历史、运行日志</td></tr>
+<tr><td>设置</td><td>数据根目录、Chromium 路径与版本、端口范围、内存提示阈值</td></tr>
+</table>
+<ul>
+<li>运行中的环境，代理和指纹字段只读；关闭后才可编辑。</li>
+<li>删除环境：移到废纸篓（整个目录），需二次确认。</li>
+<li>复制环境：复制账号、代理以外的配置，<b>重新生成种子</b>，浏览器数据不复制。</li>
+</ul>
+
+<h2 id="s12">12. 实施顺序与验收</h2>
+<table>
+<tr><th style="width:56px">阶段</th><th style="width:210px">内容</th><th>验收标准</th></tr>
+<tr><td>1</td><td>核心层 + 网络积木 + 2 个样本环境</td><td>两个环境 Cookie 互不可见；socks5h 与 http 均能带用户名密码连通；<b>http 上游访问明文 http（80 端口）网站正常</b>（部分 HTTP 代理只允许 CONNECT 443，不通时中转需改用普通转发）；出口 IP 与录入值一致且不等于本机 IP，运行中更换代理出口能在复查间隔内断网；断掉上游后该环境所有页面打不开，抓包确认零直连；WebRTC 检测不到真实 IP 与内网 IP；本机无 DNS 查询</td></tr>
+<tr><td>2</td><td>多环境并行</td><td>同时打开 5 个环境、各走各的代理，出口 IP 各不相同；任意关掉一个代理只影响对应环境；崩溃后残留锁可自动清除</td></tr>
+<tr><td>3</td><td>阶段一指纹积木 + 检测页</td><td>时区、语言三处、窗口与配置一致；主页面 / iframe / Worker 一致；重启 3 次结果不变；测试模式关闭时检测页不可访问，开启时只有检测页可访问；本机端口扫描测试中所有端口表现一致</td></tr>
+<tr><td>4</td><td>管理页面</td><td>新建、编辑、启动、关闭、搜索、检测、复制、删除全部可用；运行中禁止编辑代理与指纹</td></tr>
+<tr><td>5</td><td>自编译 Chromium + 阶段二内核积木</td><td>每块积木可单独开关；任意两个环境指纹哈希不同；检测页无矛盾项</td></tr>
+<tr><td>6</td><td>安全验证与打包</td><td>沙箱、证书校验正常；完成签名与公证</td></tr>
+</table>
+
+<h2 id="s13">13. 风险与已知限制</h2>
+<table>
+<tr><th style="width:180px">项</th><th>说明</th></tr>
+<tr><td>代理与账号密码明文存放</td><td>代理密码、账号登录密码按要求明文保存在 <code>env.json</code>；Cookie 因 <code>--use-mock-keychain</code> 也等同明文。备份、同步网盘、发给他人时会一并带走。建议数据根目录不放在 iCloud 等同步目录下。</td></tr>
+<tr><td>出口 IP 复查流量</td><td>默认 1–10 秒随机复查，单环境约 17MB/天；按流量计费的代理需计入成本。回显服务使用公共服务轮换，可能被限流（已接受）。</td></tr>
+<tr><td>待实测项</td><td>Mac 版 Chromium 的 <code>TZ</code> 时区是否生效；pf 按进程隔离是否可行；无头模式采集的显卡信息是否与有界面一致。</td></tr>
+<tr><td>已暴露的代理密码</td><td><code>x.x.x.x:端口</code> 的用户名密码已在聊天和终端历史中出现，建议在代理后台修改后再录入。</td></tr>
+<tr><td>阶段二成本</td><td>Mac 需约 100GB 以上磁盘、建议 32GB 内存，首次编译需数小时；每个 Chromium 大版本都要重新合并补丁。</td></tr>
+<tr><td>指纹不承诺无法识别</td><td>阶段一完成时，各环境的硬件类指纹仍相同；阶段二完成后也只保证自洽与差异化，不保证对所有检测方案有效。</td></tr>
+<tr><td>跨系统伪装</td><td>第一版只做 macOS 模板，不支持伪装成 Windows / Android。</td></tr>
+<tr><td>行为特征</td><td>鼠标轨迹、输入节奏等不在本项目范围内。</td></tr>
+<tr><td>pf 防火墙</td><td>需要管理员权限安装规则；首次运行时由使用者手动授权。</td></tr>
+</table>
+
+</main>
+</div>
+</body>
+</html>
