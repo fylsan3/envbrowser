@@ -4,7 +4,10 @@ S="$(git rev-parse --show-toplevel)/scripts/hooks/secret-scan.sh"
 Z=0000000000000000000000000000000000000000
 while read -r lref lsha rref rsha; do
   [ "$lsha" = "$Z" ] && continue              # 删除远端分支，无需检查
-  if [ "$rsha" = "$Z" ]; then range="$lsha"   # 新分支：检查全部
+  if [ "$rsha" = "$Z" ]; then
+    # 新分支 / 新标签：只查远端还没有的提交（已推送的提交在当时已检查过；
+    # 禁用词清单仍会在最后扫描全部历史）
+    range="$lsha --not --remotes"
   else range="$rsha..$lsha"; fi
   "$S" range "$range" || exit 1
 done

@@ -68,7 +68,9 @@ case "${1:-staged}" in
     report "新增内容命中禁用词" "$(printf '%s' "$diff" | check_list)"
     ;;
   range)
-    diff=$(git log -p --no-color "$2" | added_lines)
+    # $2 不加引号：pre-push 可能传入 "<sha> --not --remotes" 这样的多个参数
+    # shellcheck disable=SC2086
+    diff=$(git log -p --no-color $2 | added_lines)
     report "待推送提交含非示例 IP 地址" "$(printf '%s' "$diff" | check_ips)"
     report "待推送提交命中禁用词" "$(printf '%s' "$diff" | check_list)"
     ;;

@@ -28,7 +28,7 @@ func TestLeakHeaders(t *testing.T) {
 	if l := LeakHeaders(ok); len(l) != 0 {
 		t.Errorf("误报: %v", l)
 	}
-	bad := `{"headers":{"Via":"1.1 squid","X-Forwarded-For":"14.0.0.1"}}`
+	bad := `{"headers":{"Via":"1.1 squid","X-Forwarded-For":"203.0.113.9"}}`
 	if l := LeakHeaders(bad); len(l) != 2 {
 		t.Errorf("漏报: %v", l)
 	}
