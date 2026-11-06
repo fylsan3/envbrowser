@@ -183,7 +183,12 @@ routes.templates = async () => {
     h('td', {}, button(t.enabled ? '停用' : '启用', async () => {
       await api('POST', '/api/templates/enable', { name: t.name, enabled: !t.enabled });
       routes.templates();
-    }), t.enabled ? null : h('span.mut', { text: ' 已停用' })))));
+    }), t.enabled ? null : h('span.mut', { text: ' 已停用' }),
+    t.used ? null : button('删除', async () => {
+      if (!confirm(`删除模板“${t.name}”？没有环境在用它。删除后不能恢复，需要时可再手动新增。`)) return;
+      await api('POST', '/api/templates/delete', { name: t.name });
+      toast('已删除'); routes.templates();
+    }, 'danger')))));
   const f = { name: h('input'), model: h('input'), chip: h('input'), hc: h('input', { type: 'number', min: 1 }), pv: h('input', { placeholder: '如 15.1.0' }) };
   const add = button('新增模板', async () => {
     await api('POST', '/api/templates', { name: f.name.value, model: f.model.value, chip: f.chip.value,
@@ -192,7 +197,7 @@ routes.templates = async () => {
   }, 'pri');
   view().replaceChildren(
     h('div.card', {},
-      h('div.mut', { text: '新建环境时从已启用的模板中选使用次数最少的。停用不影响已绑定的环境。网页能读到的只有系统版本和 CPU 核数。' }),
+      h('div.mut', { text: '新建环境时从已启用的模板中选使用次数最少的。停用不影响已绑定的环境。有环境在用的模板不能删除（可以停用）。网页能读到的只有系统版本和 CPU 核数。' }),
       h('table', {}, h('thead', {}, h('tr', {}, ['名称', '机型', '芯片', '核数', '系统版本', '使用中', ''].map(t => h('th', { text: t })))), tbody)),
     h('div.card', {}, h('h3', { text: '手动新增' }),
       h('div.g', {},

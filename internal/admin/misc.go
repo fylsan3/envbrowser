@@ -10,6 +10,7 @@ import (
 
 	"envbrowser/internal/config"
 	"envbrowser/internal/egress"
+	"envbrowser/internal/fpcheck"
 )
 
 // checkResult “测试代理”/“检测”按钮的结果，每一项单独给出，失败不影响后面的项。
@@ -166,6 +167,55 @@ func (s *Server) addTemplate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(204)
+}
+
+func (s *Server) deleteTemplate(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Name string `json:"name"`
+	}
+	if err := readJSON(r, &in); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	if err := s.Store.DeleteTemplate(in.Name); err != nil {
+		fail(w, 400, err)
+		return
+	}
+	w.WriteHeader(204)
+}
+
+// listReports 环境详情页的检测报告历史：只返回摘要和未通过的项，最新的在前。
+func (s *Server) listReports(w http.ResponseWriter, r *http.Request) {
+	e, err := s.Store.Load(r.PathValue("id"))
+	if err != nil {
+		fail(w, 404, err)
+		return
+	}
+	rs, err := fpcheck.LoadReports(e)
+	if err != nil {
+		fail(w, 500, err)
+		return
+	}
+	type item struct {
+		File    string        `json:"file"`
+		Time    time.Time     `json:"time"`
+		Seed    int64         `json:"seed"`
+		Summary string        `json:"summary"`
+		Failed  int           `json:"failed"`
+		Bad     []fpcheck.Row `json:"bad"` // 未通过或需要人看一眼的项
+	}
+	out := make([]item, 0, len(rs))
+	for i := len(rs) - 1; i >= 0; i-- {
+		x := rs[i]
+		it := item{File: x.File, Time: x.Time, Seed: x.Seed, Summary: x.Summary, Failed: x.Failed, Bad: []fpcheck.Row{}}
+		for _, row := range x.Rows {
+			if !row.OK || row.Warn {
+				it.Bad = append(it.Bad, row)
+			}
+		}
+		out = append(out, it)
+	}
+	writeJSON(w, out)
 }
 
 func (s *Server) enableTemplate(w http.ResponseWriter, r *http.Request) {

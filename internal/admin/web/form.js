@@ -166,6 +166,7 @@ async function envForm(mode, id) {
 routes.detail = async id => {
   const { env, row } = await api('GET', '/api/envs/' + id);
   const log = await api('GET', `/api/envs/${id}/log`);
+  const reports = await api('GET', `/api/envs/${id}/reports`);
   const up = env.proxy.primary;
   const kv = (k, v) => h('tr', {}, h('th', { text: k, style: 'width:160px' }), h('td', { text: v === '' || v == null ? '—' : String(v) }));
   const pass = h('input', { type: 'password', value: env.account.password, readOnly: true });
@@ -194,6 +195,34 @@ routes.detail = async id => {
         kv('已关闭的积木', off.join('、') || '无'),
         kv('浏览器版本', env.chromium_version),
         kv('创建时间', env.created_at))),
+    reportCard(reports),
     h('div.card', {}, h('div.bar', {}, h('b', { text: '运行日志（含检测记录，最近 64KB）' }), h('span', { style: 'margin-left:auto' }, button('刷新', () => routes.detail(id)))),
       h('pre', { text: log || '还没有日志' })));
 };
+
+// 检测报告历史（需求规格第 9 节：reports/ 下按时间保存，可在管理页面查看）。
+// 只列摘要；有未通过或需要留意的项时，点开看目标值与实际值。
+function reportCard(rs) {
+  const fmt = t => new Date(t).toLocaleString('zh-CN', { hour12: false });
+  const tbody = h('tbody', {}, rs.map(r => {
+    const tr = h('tr', {},
+      h('td', { text: fmt(r.time) }),
+      h('td', { text: r.seed }),
+      h('td', {}, h(r.failed ? 'span.err' : 'span', { text: r.summary })),
+      h('td', { text: r.file }));
+    if (!r.bad.length) return tr;
+    const det = h('details', {}, h('summary', { text: `${r.bad.length} 项需要看一眼` }),
+      h('table', {}, r.bad.map(b => h('tr', {},
+        h('td', { text: (b.ok ? '△ ' : '✗ ') + b.item }),
+        h('td.mut', { text: '目标 ' + (b.want || '—') }),
+        h('td', { text: '实际 ' + (b.got || '—') }),
+        h('td.mut', { text: b.where || '' })))));
+    tr.lastChild.append(det);
+    return tr;
+  }));
+  return h('div.card', {},
+    h('div.bar', {}, h('b', { text: `检测报告历史（${rs.length} 份，最新的在前）` })),
+    rs.length
+      ? h('table', {}, h('thead', {}, h('tr', {}, ['时间', '种子', '结果', '文件'].map(t => h('th', { text: t })))), tbody)
+      : h('div.mut', { text: '还没有检测报告。测试模式下打开检测页，或运行 envbrowser fpcheck，报告会保存到环境目录的 reports/ 下。' }));
+}

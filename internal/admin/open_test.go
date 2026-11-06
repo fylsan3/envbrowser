@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"envbrowser/internal/config"
+	"envbrowser/internal/fpcheck"
 	"envbrowser/internal/runner"
 )
 
@@ -152,5 +153,50 @@ func TestMetaMemoryWarn(t *testing.T) {
 	json.Unmarshal(do(t, s, hd, "GET", "/api/meta", "").Body.Bytes(), &m)
 	if m["memory_warn_n"] != float64(config.DefaultSettings().MemoryWarnN) {
 		t.Fatalf("meta 应包含 memory_warn_n，得到 %v", m["memory_warn_n"])
+	}
+}
+
+func TestTemplateDeleteAndReports(t *testing.T) {
+	s, hd := newTestServer(t)
+	createEnv(t, s, hd, "")
+	var ts []templateRow
+	json.Unmarshal(do(t, s, hd, "GET", "/api/templates", "").Body.Bytes(), &ts)
+	for _, x := range ts {
+		code := do(t, s, hd, "POST", "/api/templates/delete", `{"name":"`+x.Name+`"}`).Code
+		if x.Used > 0 && code != 400 {
+			t.Fatalf("在用模板 %s 应拒绝删除，得到 %d", x.Name, code)
+		}
+		if x.Used == 0 {
+			if code != 204 {
+				t.Fatalf("未用模板 %s 应能删除，得到 %d", x.Name, code)
+			}
+			break
+		}
+	}
+
+	if w := do(t, s, hd, "GET", "/api/envs/env-0001/reports", ""); w.Code != 200 || strings.TrimSpace(w.Body.String()) != "[]" {
+		t.Fatalf("没有报告时应返回空列表: %d %s", w.Code, w.Body)
+	}
+	e, _ := s.Store.Load("env-0001")
+	for i, ok := range []bool{true, false} {
+		rep := &fpcheck.Report{Env: e.ID, Time: time.Date(2026, 11, 6, 10, i, 0, 0, time.UTC), Summary: "x",
+			Rows: []fpcheck.Row{{Item: "时区", OK: true}, {Item: "核数", OK: ok, Want: "8", Got: "10"}}}
+		if !ok {
+			rep.Failed = 1
+		}
+		if _, err := fpcheck.Save(e, rep); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var got []struct {
+		Failed int           `json:"failed"`
+		Bad    []fpcheck.Row `json:"bad"`
+	}
+	json.Unmarshal(do(t, s, hd, "GET", "/api/envs/env-0001/reports", "").Body.Bytes(), &got)
+	if len(got) != 2 || got[0].Failed != 1 || len(got[0].Bad) != 1 || got[0].Bad[0].Item != "核数" || len(got[1].Bad) != 0 {
+		t.Fatalf("报告历史应最新在前、只列未通过项: %+v", got)
+	}
+	if w := do(t, s, hd, "GET", "/api/envs/env-9999/reports", ""); w.Code != 404 {
+		t.Fatalf("不存在的环境应 404，得到 %d", w.Code)
 	}
 }

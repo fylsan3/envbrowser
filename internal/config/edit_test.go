@@ -129,3 +129,45 @@ func TestTemplateEnableAndAdd(t *testing.T) {
 		t.Fatalf("新增后应有 5 个模板且新模板启用: %d", len(ts2))
 	}
 }
+
+func TestDeleteTemplate(t *testing.T) {
+	s := newTestStore(t)
+	ts, _ := s.Templates()
+	e, err := s.Create(NewEnvInput{Primary: testUp()}, DefaultSettings())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.DeleteTemplate(e.Fingerprint.Template); err == nil {
+		t.Fatal("有环境在用的模板不能删除")
+	}
+	if err := s.DeleteTemplate("不存在"); err == nil {
+		t.Fatal("不存在的模板应报错")
+	}
+	var free []string
+	for _, x := range ts {
+		if x.Name != e.Fingerprint.Template {
+			free = append(free, x.Name)
+		}
+	}
+	if err := s.DeleteTemplate(free[0]); err != nil {
+		t.Fatal(err)
+	}
+	ts2, _ := s.Templates()
+	if len(ts2) != len(ts)-1 {
+		t.Fatalf("删除后应剩 %d 个，实际 %d", len(ts)-1, len(ts2))
+	}
+	for _, x := range ts2 {
+		if x.Name == free[0] {
+			t.Fatal("模板未被删除")
+		}
+	}
+	// 只剩在用模板启用时，删除最后一个未用的启用模板 → 拒绝
+	for _, n := range free[1:] {
+		s.SetTemplateEnabled(n, false)
+	}
+	s.SetTemplateEnabled(free[1], true)
+	s.SetTemplateEnabled(e.Fingerprint.Template, false)
+	if err := s.DeleteTemplate(free[1]); err == nil {
+		t.Fatal("删除后没有启用的模板，应拒绝")
+	}
+}

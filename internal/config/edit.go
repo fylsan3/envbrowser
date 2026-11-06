@@ -169,6 +169,38 @@ func (s *Store) AddTemplate(t Template) error {
 	return s.saveTemplates(append(ts, t))
 }
 
+// DeleteTemplate 删除模板（需求规格第 8.4 节）：有环境在用时禁止删除；
+// 删除后至少要保留一个启用的模板。与新建环境共用 alloc 锁，避免删除时恰好有新环境选中它。
+func (s *Store) DeleteTemplate(name string) error {
+	s.alloc.Lock()
+	defer s.alloc.Unlock()
+	ts, err := s.Templates()
+	if err != nil {
+		return err
+	}
+	if n := s.usage().templates[name]; n > 0 {
+		return fmt.Errorf("模板 %q 有 %d 个环境在用，不能删除（可以停用）", name, n)
+	}
+	out := ts[:0:0]
+	enabled := 0
+	for _, t := range ts {
+		if t.Name == name {
+			continue
+		}
+		out = append(out, t)
+		if t.Enabled {
+			enabled++
+		}
+	}
+	if len(out) == len(ts) {
+		return fmt.Errorf("没有模板 %q", name)
+	}
+	if enabled == 0 {
+		return errors.New("至少要保留一个启用的模板")
+	}
+	return s.saveTemplates(out)
+}
+
 func (s *Store) saveTemplates(ts []Template) error {
 	dir := filepath.Join(s.Root, "templates")
 	if err := os.MkdirAll(dir, 0o700); err != nil {

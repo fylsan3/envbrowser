@@ -87,6 +87,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/templates", s.listTemplates)
 	mux.HandleFunc("POST /api/templates", s.addTemplate)
 	mux.HandleFunc("POST /api/templates/enable", s.enableTemplate)
+	mux.HandleFunc("POST /api/templates/delete", s.deleteTemplate)
+	mux.HandleFunc("GET /api/envs/{id}/reports", s.listReports)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("POST /api/settings", s.saveSettings)
 	return s.guard(mux)
