@@ -199,7 +199,11 @@ func fieldtest(st config.Settings, args []string) {
 
 	m.printf("\n【跨环境比对】\n")
 	for _, r := range fpcheck.Compare(reports) {
-		pass(r.Item, r.OK, "%s", r.Got)
+		note := r.Got
+		if r.Warn {
+			note += "（注意：只提示，不算失败）"
+		}
+		pass(r.Item, r.OK, "%s", note)
 	}
 
 	// 错误密码：应在浏览器启动前失败

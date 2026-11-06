@@ -205,7 +205,7 @@ func shortHash(s string) string {
 
 // Compare 跨环境与重启比对（需求规格 9.2）：
 //   - byEnv：每个环境的多次报告（同一环境重启多次）。同一环境所有报告的随种子项必须完全相同。
-//   - 不同环境之间 Canvas、音频哈希不能相同。
+//   - 不同环境之间 Canvas 哈希不能相同；音频重复只提示（只有 7 档）。
 func Compare(byEnv map[string][]*Report) []Row {
 	var rows []Row
 	ids := make([]string, 0, len(byEnv))
@@ -258,8 +258,13 @@ func Compare(byEnv map[string][]*Report) []Row {
 			}
 		}
 		sort.Strings(dup)
-		rows = append(rows, Row{Item: "跨环境 " + item + " 哈希互不相同", Want: "两两不同",
-			Got: nonEmpty(strings.Join(dup, "；"), fmt.Sprintf("%d 个环境各不相同", len(first))), Where: "跨环境", OK: len(dup) == 0})
+		row := Row{Item: "跨环境 " + item + " 哈希互不相同", Want: "两两不同",
+			Got: nonEmpty(strings.Join(dup, "；"), fmt.Sprintf("%d 个环境各不相同", len(first))), Where: "跨环境", OK: len(dup) == 0}
+		if item == "音频" {
+			// 音频扰动只有 7 档，重复属正常（需求规格第 13 节，使用者 2026-11-06 选择只提示）
+			row.Want, row.OK, row.Warn = "允许重复（只提示）", true, len(dup) > 0
+		}
+		rows = append(rows, row)
 	}
 	return rows
 }

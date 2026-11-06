@@ -118,6 +118,22 @@ func TestCompare(t *testing.T) {
 	if fails != 2 {
 		t.Fatalf("应有 2 项失败（重启不一致、Canvas 相同），实际 %d", fails)
 	}
+	// 跨环境音频相同：只提示，不算失败
+	a2.Raw.Extra.Audio = a1.Raw.Extra.Audio
+	b.Raw.Places[0].Canvas = "1111111111111111"
+	b.Raw.Extra.Audio = a1.Raw.Extra.Audio
+	warned := false
+	for _, r := range Compare(map[string][]*Report{"env-0001": {a1, a2}, "env-0002": {b}}) {
+		if !r.OK {
+			t.Errorf("音频相同不应判失败: %+v", r)
+		}
+		if strings.Contains(r.Item, "音频") && r.Warn {
+			warned = true
+		}
+	}
+	if !warned {
+		t.Fatal("音频相同应给出提示")
+	}
 }
 
 func TestServerGuardAndReport(t *testing.T) {
