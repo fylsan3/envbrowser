@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -334,5 +335,81 @@ func TestPortCooldown(t *testing.T) {
 	if r3, err := Start("env-c", up, p1, p1, nil); err == nil {
 		r3.Close()
 		t.Fatal("冷却中的端口不应被分配")
+	}
+}
+
+// flakyFront 在 backend 前面套一层：前 drop 个连接一进来就断开，之后原样转发。返回端口和连接计数。
+func flakyFront(t *testing.T, backend string, drop int32) (int, *atomic.Int32) {
+	ln, _ := net.Listen("tcp", "127.0.0.1:0")
+	t.Cleanup(func() { ln.Close() })
+	var n atomic.Int32
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			if n.Add(1) <= drop {
+				c.Close()
+				continue
+			}
+			go func(c net.Conn) {
+				defer c.Close()
+				b, err := net.Dial("tcp", backend)
+				if err != nil {
+					return
+				}
+				defer b.Close()
+				go io.Copy(b, c)
+				io.Copy(c, b)
+			}(c)
+		}
+	}()
+	return ln.Addr().(*net.TCPAddr).Port, &n
+}
+
+func TestRetryOnceSameUpstream(t *testing.T) {
+	echo := echoServer(t)
+	h, p := fakeSocks5(t, "u", "p", echo, nil)
+	port, n := flakyFront(t, net.JoinHostPort(h, strconv.Itoa(p)), 1)
+	r := startRelay(t, config.Upstream{Type: "socks5h", Host: "127.0.0.1", Port: port, Username: "u", Password: "p"})
+	c, rep := socksConnect(t, r.Port(), "echo.test", 443)
+	defer c.Close()
+	if rep != 0 {
+		t.Fatalf("第一次被断开后应经同一上游重试成功，rep=%d", rep)
+	}
+	roundTrip(t, c)
+	if got := n.Load(); got != 2 {
+		t.Fatalf("上游应收到 2 次连接，实际 %d", got)
+	}
+}
+
+func TestRetryAtMostOnceNoDirect(t *testing.T) {
+	echo := echoServer(t)
+	h, p := fakeSocks5(t, "u", "p", echo, nil)
+	port, n := flakyFront(t, net.JoinHostPort(h, strconv.Itoa(p)), 100)
+	r := startRelay(t, config.Upstream{Type: "socks5h", Host: "127.0.0.1", Port: port, Username: "u", Password: "p"})
+	c, rep := socksConnect(t, r.Port(), "echo.test", 443)
+	defer c.Close()
+	if rep == 0 {
+		t.Fatal("两次都失败时不应连通（不能直连）")
+	}
+	if got := n.Load(); got != 2 {
+		t.Fatalf("最多重试 1 次，上游应收到 2 次连接，实际 %d", got)
+	}
+}
+
+func TestNoRetryOnAuthFail(t *testing.T) {
+	echo := echoServer(t)
+	h, p := fakeSocks5(t, "u", "p", echo, nil)
+	port, n := flakyFront(t, net.JoinHostPort(h, strconv.Itoa(p)), 0)
+	r := startRelay(t, config.Upstream{Type: "socks5h", Host: "127.0.0.1", Port: port, Username: "u", Password: "wrong"})
+	c, rep := socksConnect(t, r.Port(), "echo.test", 443)
+	defer c.Close()
+	if rep == 0 {
+		t.Fatal("认证失败时不应连通")
+	}
+	if got := n.Load(); got != 1 {
+		t.Fatalf("认证失败不应重试，上游应只收到 1 次连接，实际 %d", got)
 	}
 }

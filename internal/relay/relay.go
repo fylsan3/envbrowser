@@ -3,7 +3,7 @@
 //
 // 硬规则：
 //   - 不做任何本地 DNS 解析，域名原样交给上游。
-//   - 上游失败即断开，代码中不存在直连分支。
+//   - 上游网络层偶发失败（超时 / 断开）经同一上游重试 1 次，仍失败即断开；代码中不存在直连分支。
 //   - 目标为本机/内网字面地址一律拒绝（测试模式下只放行一个地址）。
 //   - 运行中上游不可更换。
 package relay
@@ -21,6 +21,7 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 
 	"envbrowser/internal/config"
@@ -228,6 +229,18 @@ func (r *Relay) handle(c net.Conn) {
 		up, err = net.DialTimeout("tcp", tt, dialTimeout)
 	} else {
 		up, err = r.dialUpstream(target)
+		// 网络层的偶发失败（超时、连接被断开）经同一条上游再试 1 次；
+		// 认证失败、上游明确拒绝不重试。绝不改走直连或其他代理。
+		if err != nil && retryable(err) && !r.blocked.Load() {
+			r.log("[%s] 连接 %s 失败，经同一上游重试 1 次: %v", r.envID, target, err)
+			c.SetDeadline(time.Now().Add(dialTimeout + 5*time.Second))
+			up, err = r.dialUpstream(target)
+			if err == nil && r.blocked.Load() {
+				up.Close()
+				reply(c, repNotAllowed)
+				return
+			}
+		}
 	}
 	if err != nil {
 		r.log("[%s] 连接 %s 失败: %v", r.envID, target, err)
@@ -340,6 +353,16 @@ func closeWrite(c net.Conn) {
 // 失败直接返回错误，不存在任何回退。
 func (r *Relay) dialUpstream(target string) (net.Conn, error) {
 	return DialVia(context.Background(), &r.upstream, target)
+}
+
+// retryable 判断是否属于值得重试一次的网络层偶发失败。
+func retryable(err error) bool {
+	var ne net.Error
+	if errors.As(err, &ne) && ne.Timeout() {
+		return true
+	}
+	return errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) ||
+		errors.Is(err, syscall.ECONNRESET) || errors.Is(err, syscall.ECONNREFUSED)
 }
 
 // DialVia 供中转和出口校验共用。
