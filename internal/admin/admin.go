@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"sync"
+	"time"
 
 	"envbrowser/internal/config"
 	"envbrowser/internal/runner"
@@ -38,12 +39,18 @@ type Server struct {
 	mu       sync.Mutex
 	settings config.Settings
 	sess     map[string]*runner.Session
+	// starting 正在校验出口、尚未启动浏览器的环境；值为 true 表示期间被要求关闭（启动完成后立即关掉）。
+	starting map[string]bool
+	// openErr 最近一次打开失败的原因，下次打开时清除。
+	openErr map[string]string
+	closing bool // 主程序退出中，不再接受打开
 }
 
 func New(store *config.Store, st config.Settings, local net.IP) *Server {
 	b := make([]byte, 24)
 	rand.Read(b)
-	return &Server{Store: store, settings: st, Local: local, token: hex.EncodeToString(b), sess: map[string]*runner.Session{}}
+	return &Server{Store: store, settings: st, Local: local, token: hex.EncodeToString(b),
+		sess: map[string]*runner.Session{}, starting: map[string]bool{}, openErr: map[string]string{}}
 }
 
 // Settings 返回当前设置的副本。
@@ -148,11 +155,21 @@ func (s *Server) session(id string) *runner.Session {
 	return ss
 }
 
-func (s *Server) running(id string) bool { return s.session(id) != nil }
+// running 环境是否在运行或启动中（两者都禁止重复打开、改代理指纹、删除）。
+func (s *Server) running(id string) bool {
+	if s.session(id) != nil {
+		return true
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	_, ok := s.starting[id]
+	return ok
+}
 
-// CloseAll 主程序退出时关闭所有环境。
+// CloseAll 主程序退出时关闭所有环境；启动中的等它启动完成后关闭（最多 70 秒，出口校验上限 60 秒）。
 func (s *Server) CloseAll() {
 	s.mu.Lock()
+	s.closing = true
 	list := make([]*runner.Session, 0, len(s.sess))
 	for _, ss := range s.sess {
 		list = append(list, ss)
@@ -160,6 +177,15 @@ func (s *Server) CloseAll() {
 	s.mu.Unlock()
 	for _, ss := range list {
 		ss.Close()
+	}
+	for i := 0; i < 140; i++ {
+		s.mu.Lock()
+		n := len(s.starting)
+		s.mu.Unlock()
+		if n == 0 {
+			return
+		}
+		time.Sleep(500 * time.Millisecond)
 	}
 }
 

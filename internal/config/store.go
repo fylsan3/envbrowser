@@ -9,6 +9,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -56,6 +57,9 @@ func DefaultSettings() Settings {
 // Store 管理数据根目录（默认 ~/BrowserEnvs）。
 type Store struct {
 	Root string
+	// alloc 串行化“分配编号 / 种子 / 模板”的操作（新建、重新生成种子），
+	// 防止管理页面并发请求时两个环境拿到同一编号或同一种子。
+	alloc sync.Mutex
 }
 
 func DefaultRoot() string {
@@ -256,6 +260,8 @@ type NewEnvInput struct {
 }
 
 func (s *Store) Create(in NewEnvInput, st Settings) (*Env, error) {
+	s.alloc.Lock()
+	defer s.alloc.Unlock()
 	id, err := s.NextID()
 	if err != nil {
 		return nil, err

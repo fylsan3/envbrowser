@@ -85,6 +85,8 @@ func (s *Store) Update(id string, in EnvEdit) (*Env, error) {
 
 // RegenSeed 重新生成指纹种子（窗口大小保留），仍保证各环境不重复。
 func (s *Store) RegenSeed(id string) (*Env, error) {
+	s.alloc.Lock()
+	defer s.alloc.Unlock()
 	e, err := s.Load(id)
 	if err != nil {
 		return nil, err

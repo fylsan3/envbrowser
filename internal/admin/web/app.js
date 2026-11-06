@@ -113,18 +113,27 @@ routes.list = async () => {
   };
   search.addEventListener('input', () => { filterText = search.value; draw(); });
   sel.addEventListener('change', () => { filterStatus = sel.value; draw(); });
-  const load = async () => { rows = await api('GET', '/api/envs'); draw(); };
+  const load = async () => { rows = await api('GET', '/api/envs'); draw(); memWarn(rows); };
   await load();
   timer = setInterval(() => { if (!document.activeElement || document.activeElement.tagName !== 'BUTTON') load().catch(() => {}); }, 3000);
 };
 
+// 同时打开（含启动中）的环境达到设置值时提示内存，不拦截（需求规格第 6 节）
+function memWarn(rows) {
+  const n = rows.filter(r => r.status !== 'closed').length;
+  const max = META.memory_warn_n || 0;
+  const el = $('#memwarn');
+  el.hidden = !(max > 0 && n > max);
+  el.textContent = `已打开 ${n} 个环境（超过提示阈值 ${max}）。每个浏览器约占 300MB–1GB 内存，电脑变慢时请关掉暂时不用的环境。阈值可在“设置”里修改。`;
+}
+
 function rowEl(r) {
   const ops = [];
   if (r.status === 'closed') {
-    ops.push(button('打开', async () => { toast('正在校验出口并启动…', 60000); await api('POST', `/api/envs/${r.id}/open`); toast('已启动'); routes.list(); }, 'pri'));
+    ops.push(button('打开', async () => { await api('POST', `/api/envs/${r.id}/open`); toast('正在校验出口并启动，结果见状态栏'); routes.list(); }, 'pri'));
     ops.push(button('编辑', () => go('edit/' + r.id)));
   } else {
-    ops.push(button('关闭', async () => { await api('POST', `/api/envs/${r.id}/close`); routes.list(); }));
+    ops.push(button(r.status === 'starting' ? '取消' : '关闭', async () => { await api('POST', `/api/envs/${r.id}/close`); routes.list(); }));
   }
   ops.push(button('检测', async () => { toast('检测中…', 60000); showCheck(await api('POST', `/api/envs/${r.id}/check`)); }));
   ops.push(button('详情', () => go('detail/' + r.id)));

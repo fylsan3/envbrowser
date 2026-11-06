@@ -42,7 +42,15 @@ func (s *Server) row(e *config.Env) envRow {
 		if ss.Relay != nil {
 			v.Port = ss.Relay.Port()
 		}
+		return v
 	}
+	s.mu.Lock()
+	if _, ok := s.starting[e.ID]; ok {
+		v.Status = "starting"
+	} else if msg := s.openErr[e.ID]; msg != "" {
+		v.LastErr = "上次打开失败：" + msg
+	}
+	s.mu.Unlock()
 	return v
 }
 
@@ -235,6 +243,8 @@ func (s *Server) trash(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"moved_to": dst})
 }
 
+// open 先登记为“启动中”并立即返回 202，出口校验和启动浏览器在后台进行（最长约 60 秒）。
+// 页面每 3 秒刷新列表即可看到结果；失败原因显示在状态下方，环境回到“未打开”。
 func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	e, err := s.Store.Load(id)
@@ -242,25 +252,57 @@ func (s *Server) open(w http.ResponseWriter, r *http.Request) {
 		fail(w, 400, err)
 		return
 	}
-	if s.running(id) {
+	if s.session(id) != nil {
 		fail(w, 409, errors.New("环境已在运行"))
 		return
 	}
-	ss, err := runner.Open(e, s.Settings(), s.Local, s.Store.Save)
-	if err != nil {
-		fail(w, 502, err)
+	s.mu.Lock()
+	if s.closing {
+		s.mu.Unlock()
+		fail(w, 503, errors.New("主程序正在退出"))
 		return
 	}
-	s.mu.Lock()
-	s.sess[id] = ss
+	if _, ok := s.starting[id]; ok {
+		s.mu.Unlock()
+		fail(w, 409, errors.New("环境正在启动"))
+		return
+	}
+	s.starting[id] = false
+	delete(s.openErr, id)
+	st := s.settings
 	s.mu.Unlock()
-	w.WriteHeader(204)
+
+	go func() {
+		ss, err := openEnv(e, st, s.Local, s.Store.Save)
+		s.mu.Lock()
+		cancelled := s.starting[id] || s.closing
+		delete(s.starting, id)
+		if err != nil {
+			s.openErr[id] = err.Error()
+		} else if !cancelled {
+			s.sess[id] = ss
+		}
+		s.mu.Unlock()
+		if err == nil && cancelled {
+			ss.Close()
+		}
+	}()
+	w.WriteHeader(202)
 }
 
+// openEnv 实际打开环境；测试里替换成假的。
+var openEnv = runner.Open
+
 func (s *Server) close(w http.ResponseWriter, r *http.Request) {
-	if ss := s.session(r.PathValue("id")); ss != nil {
+	id := r.PathValue("id")
+	if ss := s.session(id); ss != nil {
 		ss.Close()
 	}
+	s.mu.Lock()
+	if _, ok := s.starting[id]; ok {
+		s.starting[id] = true // 启动完成后立即关闭
+	}
+	s.mu.Unlock()
 	w.WriteHeader(204)
 }
 

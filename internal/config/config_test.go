@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"sync"
 	"testing"
 )
 
@@ -57,6 +58,40 @@ func TestCreateRotatesTemplatesAndUniqueSeeds(t *testing.T) {
 	}
 	if len(tpl) != 4 || len(seeds) != 4 {
 		t.Fatalf("模板 %d 套、种子 %d 个，应各为 4", len(tpl), len(seeds))
+	}
+}
+
+// 管理页面并发新建：编号、种子都不能重复，4 套模板各用 2 次。
+func TestCreateConcurrent(t *testing.T) {
+	s := newTestStore(t)
+	const n = 8
+	var wg sync.WaitGroup
+	envs := make([]*Env, n)
+	errs := make([]error, n)
+	for i := 0; i < n; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			envs[i], errs[i] = s.Create(NewEnvInput{Primary: testUp()}, DefaultSettings())
+		}(i)
+	}
+	wg.Wait()
+	ids, seeds, tpl := map[string]bool{}, map[int64]bool{}, map[string]int{}
+	for i, e := range envs {
+		if errs[i] != nil {
+			t.Fatal(errs[i])
+		}
+		ids[e.ID] = true
+		seeds[e.Fingerprint.Seed.Fingerprint] = true
+		tpl[e.Fingerprint.Template]++
+	}
+	if len(ids) != n || len(seeds) != n {
+		t.Fatalf("编号 %d 个、种子 %d 个，应各为 %d", len(ids), len(seeds), n)
+	}
+	for k, c := range tpl {
+		if c != 2 {
+			t.Errorf("模板 %s 用了 %d 次，应为 2", k, c)
+		}
 	}
 }
 

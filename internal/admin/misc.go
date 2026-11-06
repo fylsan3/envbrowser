@@ -127,11 +127,12 @@ func (s *Server) autoZone(w http.ResponseWriter, r *http.Request) {
 func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 	st := s.Settings()
 	writeJSON(w, map[string]any{
-		"zones":       config.Zones,
-		"modules":     config.DefaultModules(),
-		"test_mode":   st.TestMode,
-		"test_target": st.TestTarget,
-		"host_chip":   config.HostChip(),
+		"zones":         config.Zones,
+		"modules":       config.DefaultModules(),
+		"test_mode":     st.TestMode,
+		"test_target":   st.TestTarget,
+		"host_chip":     config.HostChip(),
+		"memory_warn_n": st.MemoryWarnN,
 	})
 }
 

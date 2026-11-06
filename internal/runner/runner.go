@@ -200,7 +200,13 @@ func OpenWith(e *config.Env, st config.Settings, local net.IP, save func(*config
 		<-mctx.Done()
 		// 被要求关闭时结束浏览器进程：先 SIGTERM，5 秒内没退出再 SIGKILL
 		// （断网后浏览器可能卡在网络请求上，迟迟不退出）。
-		if s.Status0() != "closed" && cmd.ProcessState == nil {
+		// 用 s.done 判断浏览器是否已退出；不读 cmd.ProcessState（它由 Wait 写入，并发读会数据竞争）。
+		select {
+		case <-s.done:
+			return
+		default:
+		}
+		{
 			cmd.Process.Signal(syscall.SIGTERM)
 			select {
 			case <-s.done:
