@@ -200,3 +200,22 @@ func TestTemplateDeleteAndReports(t *testing.T) {
 		t.Fatalf("不存在的环境应 404，得到 %d", w.Code)
 	}
 }
+
+func TestQuit(t *testing.T) {
+	s, hd := newTestServer(t)
+	select {
+	case <-s.Quit:
+		t.Fatal("未点退出前 Quit 不应关闭")
+	default:
+	}
+	for i := 0; i < 2; i++ { // 重复点两次不能崩
+		if w := do(t, s, hd, "POST", "/api/quit", ""); w.Code != 204 {
+			t.Fatalf("退出应返回 204，得到 %d", w.Code)
+		}
+	}
+	select {
+	case <-s.Quit:
+	case <-time.After(time.Second):
+		t.Fatal("点退出后 Quit 应关闭")
+	}
+}

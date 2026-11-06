@@ -44,13 +44,18 @@ type Server struct {
 	// openErr 最近一次打开失败的原因，下次打开时清除。
 	openErr map[string]string
 	closing bool // 主程序退出中，不再接受打开
+
+	// Quit 页面点“退出游龙”后关闭（只关一次），主程序据此走正常退出流程。
+	Quit     chan struct{}
+	quitOnce sync.Once
 }
 
 func New(store *config.Store, st config.Settings, local net.IP) *Server {
 	b := make([]byte, 24)
 	rand.Read(b)
 	return &Server{Store: store, settings: st, Local: local, token: hex.EncodeToString(b),
-		sess: map[string]*runner.Session{}, starting: map[string]bool{}, openErr: map[string]string{}}
+		sess: map[string]*runner.Session{}, starting: map[string]bool{}, openErr: map[string]string{},
+		Quit: make(chan struct{})}
 }
 
 // Settings 返回当前设置的副本。
@@ -91,6 +96,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/envs/{id}/reports", s.listReports)
 	mux.HandleFunc("GET /api/settings", s.getSettings)
 	mux.HandleFunc("POST /api/settings", s.saveSettings)
+	mux.HandleFunc("POST /api/quit", s.quit)
 	return s.guard(mux)
 }
 
@@ -207,4 +213,10 @@ func readJSON(r *http.Request, v any) error {
 		return fmt.Errorf("请求格式错误: %w", err)
 	}
 	return nil
+}
+
+// quit 页面上的“退出游龙”：先回应页面，再通知主程序关闭所有环境并退出。
+func (s *Server) quit(w http.ResponseWriter, r *http.Request) {
+	w.WriteHeader(http.StatusNoContent)
+	s.quitOnce.Do(func() { close(s.Quit) })
 }

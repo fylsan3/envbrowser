@@ -18,6 +18,7 @@ import (
 	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -36,6 +37,10 @@ var version = "dev"
 const browserInfo = "fingerprint-chromium 148.0.7778.215 macOS arm64"
 
 func main() {
+	// 双击 游龙.app 启动时没有参数（老系统可能带 -psn_ 参数）：直接进入管理页面
+	if inAppBundle() && (len(os.Args) < 2 || strings.HasPrefix(os.Args[1], "-psn_")) {
+		os.Args = []string{os.Args[0], "serve"}
+	}
 	if len(os.Args) < 2 {
 		usage()
 	}
@@ -53,6 +58,11 @@ func main() {
 	must(err)
 	if st.ChromiumPath == "" {
 		st.ChromiumPath = guessChromium()
+	} else if _, err := os.Stat(launcher.ExecPath(st.ChromiumPath)); err != nil {
+		// 设置里的路径已不存在（例如换成了 游龙.app 内置的浏览器）：改用自动查找
+		if g := guessChromium(); g != "" {
+			st.ChromiumPath = g
+		}
 	}
 
 	cmd, args := os.Args[1], os.Args[2:]
@@ -230,16 +240,32 @@ func serve(store *config.Store, st config.Settings) {
 		fmt.Printf("已结束残留浏览器 %s PID %d\n", o.EnvID, o.PID)
 	}
 	must(err)
-	srv := admin.New(store, st, localIP(st))
+	urlFile := filepath.Join(store.Root, "admin.url")
 	ln, err := net.Listen("tcp", st.AdminAddr)
-	must(err)
+	if err != nil {
+		// 已经在运行（例如再次双击 游龙.app）：只重新打开管理页面
+		if b, rerr := os.ReadFile(urlFile); rerr == nil && len(b) > 0 {
+			fmt.Println("游龙已在运行，重新打开管理页面")
+			exec.Command("open", strings.TrimSpace(string(b))).Run()
+			return
+		}
+		must(err)
+	}
+	srv := admin.New(store, st, localIP(st))
+	// 带令牌的地址只存在数据目录里（权限 600），供再次双击时重新打开页面；退出时删除
+	os.WriteFile(urlFile, []byte(srv.URL()+"\n"), 0o600)
+	defer os.Remove(urlFile)
 	fmt.Println("管理页面:", srv.URL())
 	exec.Command("open", srv.URL()).Start()
 	hs := &http.Server{Handler: srv.Handler(), ReadHeaderTimeout: 10 * time.Second}
 	go hs.Serve(ln)
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, os.Interrupt, syscall.SIGTERM)
-	<-sig
+	select {
+	case <-sig:
+	case <-srv.Quit:
+		fmt.Println("页面上点了“退出游龙”")
+	}
 	fmt.Println("正在关闭所有环境…")
 	srv.CloseAll()
 	hs.Close()
@@ -256,19 +282,35 @@ func settings(store *config.Store, st config.Settings, args []string) {
 	fmt.Printf("已保存: chromium=%s version=%s test_mode=%v\n", st.ChromiumPath, st.ChromiumVer, st.TestMode)
 }
 
-// guessChromium 未设置浏览器路径时，按仓库布局查找 <仓库>/.toolchain/fpchromium-148/Chromium.app
-// （程序位于 <仓库>/bin/envbrowser）。找不到时返回空，启动时会报错。
+// inAppBundle 程序是否位于 xxx.app/Contents/MacOS/ 下（即双击 游龙.app 启动）。
+func inAppBundle() bool {
+	exe, err := os.Executable()
+	if err != nil {
+		return false
+	}
+	exe, _ = filepath.EvalSymlinks(exe)
+	return strings.HasSuffix(filepath.Dir(exe), ".app/Contents/MacOS")
+}
+
+// guessChromium 未设置浏览器路径时按以下顺序查找，找不到返回空（启动时报错）：
+//  1. 打包成 游龙.app 时：游龙.app/Contents/Resources/Chromium.app（程序位于 Contents/MacOS/）
+//  2. 仓库布局：<仓库>/.toolchain/fpchromium-148/Chromium.app（程序位于 <仓库>/bin/）
 func guessChromium() string {
 	exe, err := os.Executable()
 	if err != nil {
 		return ""
 	}
 	exe, _ = filepath.EvalSymlinks(exe)
-	p := filepath.Join(filepath.Dir(exe), "..", ".toolchain", "fpchromium-148", "Chromium.app")
-	if _, err := os.Stat(p); err != nil {
-		return ""
+	dir := filepath.Dir(exe)
+	for _, p := range []string{
+		filepath.Join(dir, "..", "Resources", "Chromium.app"),
+		filepath.Join(dir, "..", ".toolchain", "fpchromium-148", "Chromium.app"),
+	} {
+		if _, err := os.Stat(p); err == nil {
+			return filepath.Clean(p)
+		}
 	}
-	return filepath.Clean(p)
+	return ""
 }
 
 // autoZone 经代理取出口国家代码并映射时区（需求规格 8.5）。

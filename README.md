@@ -57,7 +57,7 @@ export PATH=$PWD/.toolchain/go/bin:$PATH GOTOOLCHAIN=local
 go test ./cmd/... ./internal/... ./templates/...
 go build -o bin/envbrowser ./cmd/envbrowser
 
-# 打包发布（产物在 dist/，只含程序、README、文档、安装脚本）
+# 打包发布（产物在 dist/：命令行版 zip + 内置浏览器的 游龙.app zip，都不含环境数据）
 scripts/release.sh v0.3.0
 ```
 
@@ -100,6 +100,16 @@ scripts/field-test.sh
 
 ## 使用
 
+### 游龙.app（推荐）
+
+1. 解压 `游龙-版本-macos-arm64.zip`，把 `游龙.app` 拖进“应用程序”（浏览器已内置，不用再装）。
+2. 第一次双击会被系统拦下（本机临时签名，没有 Apple 公证）：打开“系统设置 → 隐私与安全性”，在底部点“仍要打开”。之后正常双击即可。
+3. 双击后在后台运行（不显示 Dock 图标），自动打开管理页面；再次双击只会重新打开管理页面。
+4. 退出：管理页面右上角“退出游龙”，会先关闭所有环境。
+5. 安全自检（可选，约 10 秒，不联网）：`scripts/sandbox-check.sh`，确认浏览器各子进程都在系统沙箱里。
+
+### 命令行
+
 ```bash
 # 浏览器在 .toolchain/fpchromium-148/Chromium.app 时可省略 settings
 ./bin/envbrowser settings -chromium /path/to/Chromium.app -chromium-version 148.0.7778.215
@@ -114,7 +124,8 @@ scripts/field-test.sh
 
 - **环境**：搜索、按状态筛选；打开、关闭、检测、详情、复制、删除（移到废纸篓，二次确认）。
 - **新建 / 编辑**：账号、主代理与备用代理、出口 IP、时区语言、积木开关；“测试代理”“按出口国家自动匹配”“重新生成种子”。登录密码和代理密码默认隐藏，点“显示”可见。环境运行中只能改名称和账号。
-- **模板**：使用次数、启用 / 停用、手动新增。
+- **模板**：使用次数、启用 / 停用、手动新增；没有环境在用的模板可以删除。
+- **详情**：运行日志、检测报告历史（最新在前，只展开需要看的项）。
 - **设置**：浏览器路径与版本、端口范围、内存提示阈值、测试模式（开启时每页顶部提醒）。
 
 数据默认存放在 `~/BrowserEnvs`（可用 `ENVBROWSER_ROOT` 修改）。**代理密码和账号密码以明文保存在那里，不在仓库中。**

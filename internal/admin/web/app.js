@@ -259,3 +259,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   try { await loadMeta(); } catch (e) { toast(e.message, 10000); return; }
   render();
 });
+
+// ---------- 退出 ----------
+$('#quit').addEventListener('click', async () => {
+  if (!confirm('退出游龙？所有打开的环境都会被关闭。')) return;
+  try { await api('POST', '/api/quit'); } catch (e) { toast(e.message, 8000); return; }
+  clearInterval(timer);
+  view().replaceChildren(h('div.card', {}, h('b', { text: '游龙已退出' }),
+    h('p.mut', { text: '所有环境正在关闭。可以关掉这个页面；再次使用时双击 游龙.app。' })));
+});

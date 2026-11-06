@@ -331,8 +331,61 @@ func Start(chromium string, e *config.Env, relayPort int) (*exec.Cmd, error) {
 	return StartWith(chromium, e, relayPort, Options{})
 }
 
+// unsafeFlags 正式使用中绝不能出现的参数：关沙箱、跳过证书校验、关同源策略等。
+// 匹配时按“参数名”比较（--x 或 --x=...）。
+var unsafeFlags = []string{
+	"--no-sandbox",
+	"--disable-gpu-sandbox",
+	"--disable-setuid-sandbox",
+	"--ignore-certificate-errors",
+	"--ignore-certificate-errors-spki-list",
+	"--ignore-urlfetcher-cert-requests",
+	"--allow-insecure-localhost",
+	"--disable-web-security",
+	"--test-type",
+	"--user-data-dir", // 由启动器固定生成，不允许覆盖
+	"--proxy-server",  // 同上：只能走本环境中转
+	"--host-resolver-rules",
+	"--proxy-bypass-list",
+	"--no-proxy-server",
+	"--proxy-pac-url",
+	"--proxy-auto-detect",
+}
+
+// CheckExtra 检查附加参数。只有无界面自动化测试（带 --headless=new）才允许 --no-sandbox，
+// 原因是开发机的受限环境里沙箱起不来；其余危险参数任何情况都不允许。
+func CheckExtra(extra []string) error {
+	headless := false
+	for _, a := range extra {
+		if a == "--headless=new" {
+			headless = true
+		}
+	}
+	for _, a := range extra {
+		name, _, _ := strings.Cut(a, "=")
+		for _, f := range unsafeFlags {
+			if name != f {
+				continue
+			}
+			if f == "--no-sandbox" && headless {
+				continue
+			}
+			return fmt.Errorf("拒绝启动：参数 %s 会降低安全性（关沙箱 / 跳过证书校验 / 绕过中转），正式使用不允许", name)
+		}
+	}
+	return nil
+}
+
 // StartWith 同 Start，按 opt 替换起始网址、追加参数。
 func StartWith(chromium string, e *config.Env, relayPort int, opt Options) (*exec.Cmd, error) {
+	if err := CheckExtra(opt.Extra); err != nil {
+		return nil, err
+	}
+	for _, u := range opt.URLs {
+		if strings.HasPrefix(u, "-") {
+			return nil, fmt.Errorf("起始网址不能以 - 开头: %q", u)
+		}
+	}
 	bin := ExecPath(chromium)
 	if _, err := os.Stat(bin); err != nil {
 		return nil, fmt.Errorf("找不到 Chromium: %s", bin)

@@ -219,3 +219,56 @@ func TestFindOrphans(t *testing.T) {
 		t.Fatal("孤儿未被结束")
 	}
 }
+
+// 阶段 5：正式启动参数里不能有任何关沙箱、跳过证书校验、绕过中转的参数。
+func TestArgsNoUnsafeFlags(t *testing.T) {
+	e := testEnv(t)
+	args := Args(e, 20001)
+	for _, a := range args {
+		name, _, _ := strings.Cut(a, "=")
+		for _, f := range unsafeFlags {
+			if name == f && f != "--user-data-dir" && f != "--proxy-server" &&
+				f != "--host-resolver-rules" && f != "--proxy-bypass-list" {
+				t.Errorf("正式启动参数不应包含 %s", a)
+			}
+		}
+	}
+	if err := CheckExtra(nil); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestCheckExtra(t *testing.T) {
+	ok := [][]string{
+		{"--headless=new", "--no-sandbox"}, // 只有无界面自动化测试允许关沙箱
+		{"--headless=new"},
+	}
+	for _, x := range ok {
+		if err := CheckExtra(x); err != nil {
+			t.Errorf("%v 应允许: %v", x, err)
+		}
+	}
+	bad := [][]string{
+		{"--no-sandbox"}, // 有界面不允许关沙箱
+		{"--headless=new", "--ignore-certificate-errors"},
+		{"--ignore-certificate-errors-spki-list=abc"},
+		{"--disable-web-security"},
+		{"--headless=new", "--disable-gpu-sandbox"},
+		{"--proxy-server=socks5://127.0.0.1:9"},
+		{"--no-proxy-server"},
+		{"--user-data-dir=/tmp/x"},
+		{"--test-type"},
+	}
+	for _, x := range bad {
+		if err := CheckExtra(x); err == nil {
+			t.Errorf("%v 应拒绝", x)
+		}
+	}
+	e := testEnv(t)
+	if _, err := StartWith("/nonexistent", e, 20001, Options{Extra: []string{"--no-sandbox"}}); err == nil || !strings.Contains(err.Error(), "拒绝启动") {
+		t.Errorf("有界面带 --no-sandbox 应在启动前拒绝: %v", err)
+	}
+	if _, err := StartWith("/nonexistent", e, 20001, Options{URLs: []string{"--no-sandbox"}}); err == nil {
+		t.Error("起始网址伪装成参数应拒绝")
+	}
+}
