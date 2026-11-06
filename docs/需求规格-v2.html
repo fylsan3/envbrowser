@@ -735,7 +735,7 @@ svg text{font-family:-apple-system,"PingFang SC",sans-serif}
 <li><b>断上游测试</b>：浏览中在代理后台停用该代理（或临时改错密码），确认页面立即打不开，同时第 2 步仍然没有非 127.0.0.1 的连接。</li>
 <li><b>WebRTC / UDP</b>：第 2 步结果中不应出现任何 UDP 外连；在 browserleaks 的 WebRTC 页确认看不到本机和内网 IP。</li>
 </ol>
-<p class="sub">以上步骤已整理成 <code>scripts/field-test.sh</code>（调用 <code>envbrowser fieldtest</code>）：隐藏输入代理；第 2、3 步每秒用 lsof 采样；第 4 步后台 tcpdump，只判断浏览器访问的站点（example.com、neverssl.com）有没有出现在 DNS 查询里，报告不记录其他查询；第 5 步由中转模拟出口异常并确认连接全部切断；另加检测页全部项目、两个环境 Cookie 隔离、错误密码不启动、结束无残留进程。报告 <code>field-report.txt</code> 中代理地址、用户名、密码、出口 IP、本机公网 IP 均已打码。</p>
+<p class="sub">以上步骤已整理成 <code>scripts/field-test.sh</code>（调用 <code>envbrowser fieldtest</code>）：隐藏输入代理；第 2、3 步每秒用 lsof 采样，只绑定未连接的 UDP（发布前冒烟偶见网络服务进程有 2 个）单独列出并用 nettop 读发出字节数，0 字节只提示不算失败；另用 pktap 按进程抓包，浏览器进程向本机以外发出任何报文即判未通过，这是第 3 步的最终判定，报告只写条数和进程类型，不写目标地址；第 4 步后台 tcpdump，只判断浏览器访问的站点（example.com、neverssl.com）有没有出现在 DNS 查询里，报告不记录其他查询；第 5 步由中转模拟出口异常并确认连接全部切断；另加检测页全部项目、两个环境 Cookie 隔离、错误密码不启动、结束无残留进程。报告 <code>field-report.txt</code> 中代理地址、用户名、密码、出口 IP、本机公网 IP 均已打码。</p>
 
 <h2 id="s13">13. 风险与已知限制</h2>
 <table>

@@ -192,9 +192,32 @@ func fieldtest(st config.Settings, args []string) {
 	}
 	mon.stop()
 
-	direct, mainOther := mon.findings()
+	direct, mainOther, binds := mon.findings()
 	pass("③ 浏览器进程零直连（只连 127.0.0.1）", len(direct) == 0 && mon.samples() > 0,
 		"采样 %d 次%s", mon.samples(), listText(direct))
+	// 只绑定、没有对端的 UDP：本身不是连接，关键看有没有发出过数据（nettop 计数）；
+	// 最终以 field-test.sh 的抓包结论（浏览器进程发往本机以外的报文数）为准。
+	var bl []string
+	sentAny := false
+	for _, k := range sortedKeys(binds) {
+		switch n := binds[k]; {
+		case n < 0:
+			bl = append(bl, k+" 发出字节未读到")
+		default:
+			bl = append(bl, fmt.Sprintf("%s 发出 %d 字节", k, n))
+			sentAny = sentAny || n > 0
+		}
+	}
+	note := "没有"
+	if len(bl) > 0 {
+		note = "只绑定未连接" + listText(bl)
+		if !sentAny {
+			note += "（注意：只提示，未发出数据，不算失败）"
+		} else {
+			note += "（有数据发出，看报告末尾抓包结论）"
+		}
+	}
+	pass("③ 浏览器 UDP 绑定未发出数据", !sentAny, "%s", note)
 	pass("③ 主程序对外只连上游代理", len(mainOther) == 0, "%s", listText(mainOther))
 
 	m.printf("\n【跨环境比对】\n")
@@ -266,6 +289,15 @@ func errText(err error) string {
 	return "— " + err.Error()
 }
 
+func sortedKeys(m map[string]int64) []string {
+	ks := make([]string, 0, len(m))
+	for k := range m {
+		ks = append(ks, k)
+	}
+	sort.Strings(ks)
+	return ks
+}
+
 func listText(xs []string) string {
 	if len(xs) == 0 {
 		return ""
@@ -286,13 +318,14 @@ type connMonitor struct {
 
 	mu        sync.Mutex
 	n         int
-	direct    map[string]bool // 浏览器进程的非本机连接
-	mainOther map[string]bool // 主程序连了上游以外的地址
+	direct    map[string]bool  // 浏览器进程的非本机连接
+	mainOther map[string]bool  // 主程序连了上游以外的地址
+	binds     map[string]int64 // 浏览器进程未连接的 UDP 通配绑定（含进程类型）→ 观察到的最大发出字节数
 }
 
 func newConnMonitor(root, upstream string) *connMonitor {
 	return &connMonitor{root: root, upstream: upstream, quit: make(chan struct{}), done: make(chan struct{}),
-		direct: map[string]bool{}, mainOther: map[string]bool{}}
+		direct: map[string]bool{}, mainOther: map[string]bool{}, binds: map[string]int64{}}
 }
 
 func (c *connMonitor) run() {
@@ -312,21 +345,55 @@ func (c *connMonitor) run() {
 func (c *connMonitor) stop() { close(c.quit); <-c.done }
 
 func (c *connMonitor) sample() {
-	pids := browserPIDs(c.root)
-	var bconns []string
-	if len(pids) > 0 {
-		bconns = remotes(strings.Join(pids, ","))
+	procs := browserProcs(c.root)
+	var bsocks []sock
+	if len(procs) > 0 {
+		pids := make([]string, 0, len(procs))
+		for p := range procs {
+			pids = append(pids, p)
+		}
+		bsocks = remotes(strings.Join(pids, ","))
 	}
-	mconns := remotes(strconv.Itoa(os.Getpid()))
+	msocks := remotes(strconv.Itoa(os.Getpid()))
+
+	// 未连接的 UDP 通配绑定：只看 lsof 判断不了有没有发包，用 nettop 读该套接字的发出字节数
+	direct := map[string]bool{}
+	binds := map[string]int64{}
+	sent := map[string]map[string]int64{} // pid → 本地端口 → 发出字节
+	for _, s := range bsocks {
+		conn := s.proto + " " + s.name
+		switch {
+		case isLoopback(conn):
+		case strings.Contains(s.name, "->"):
+			direct[conn] = true
+		default:
+			if sent[s.pid] == nil {
+				var peers []string
+				sent[s.pid], peers = udpStats(s.pid)
+				for _, p := range peers {
+					direct[p+"（"+procs[s.pid]+"）"] = true
+				}
+			}
+			n, ok := sent[s.pid][port(s.name)]
+			if !ok {
+				n = -1 // 套接字已关闭，nettop 没读到
+			}
+			binds[fmt.Sprintf("UDP %s（%s）", s.name, procs[s.pid])] = n
+		}
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.n++
-	for _, r := range bconns {
-		if !isLoopback(r) {
-			c.direct[r] = true
+	for k := range direct {
+		c.direct[k] = true
+	}
+	for k, n := range binds {
+		if old, ok := c.binds[k]; !ok || n > old {
+			c.binds[k] = n
 		}
 	}
-	for _, r := range mconns {
+	for _, s := range msocks {
+		r := s.proto + " " + s.name
 		if !isLoopback(r) && !strings.HasSuffix(r, "->"+c.upstream) {
 			c.mainOther[r] = true
 		}
@@ -335,7 +402,7 @@ func (c *connMonitor) sample() {
 
 func (c *connMonitor) samples() int { c.mu.Lock(); defer c.mu.Unlock(); return c.n }
 
-func (c *connMonitor) findings() (direct, mainOther []string) {
+func (c *connMonitor) findings() (direct, mainOther []string, binds map[string]int64) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	for k := range c.direct {
@@ -346,6 +413,10 @@ func (c *connMonitor) findings() (direct, mainOther []string) {
 	}
 	sort.Strings(direct)
 	sort.Strings(mainOther)
+	binds = map[string]int64{}
+	for k, v := range c.binds {
+		binds[k] = v
+	}
 	return
 }
 
@@ -355,26 +426,122 @@ func browserPIDs(root string) []string {
 	return strings.Fields(string(out))
 }
 
-// remotes 返回这些进程的对外连接，形如 "TCP 127.0.0.1:5000->203.0.113.1:443"；监听端口不算。
-func remotes(pids string) []string {
-	out, _ := exec.Command("lsof", "-nP", "-iTCP", "-iUDP", "-a", "-p", pids, "-F", "Pn").Output()
-	var res []string
-	proto := ""
+// browserProcs 同上，附带进程类型（主进程 / 网络服务 / 渲染进程…），用于报告里说明是谁开的套接字。
+func browserProcs(root string) map[string]string {
+	out, _ := exec.Command("pgrep", "-lf", "user-data-dir="+filepath.Join(root, "env-")).Output()
+	res := map[string]string{}
 	for _, l := range strings.Split(string(out), "\n") {
+		f := strings.Fields(l)
+		if len(f) == 0 {
+			continue
+		}
+		res[f[0]] = procKind(l)
+	}
+	return res
+}
+
+// procKind 从命令行认出 Chromium 进程类型。
+func procKind(cmd string) string {
+	kind, sub := "", ""
+	for _, f := range strings.Fields(cmd) {
+		if v, ok := strings.CutPrefix(f, "--type="); ok {
+			kind = v
+		}
+		if v, ok := strings.CutPrefix(f, "--utility-sub-type="); ok {
+			sub = v
+		}
+	}
+	switch {
+	case kind == "":
+		return "主进程"
+	case sub == "network.mojom.NetworkService":
+		return "网络服务进程"
+	case sub != "":
+		return kind + ":" + sub
+	}
+	return kind
+}
+
+type sock struct{ pid, proto, name string }
+
+// remotes 返回这些进程的对外连接（TCP/UDP 已连接）和 UDP 绑定；TCP 监听端口不算。
+func remotes(pids string) []sock {
+	out, _ := exec.Command("lsof", "-nP", "-iTCP", "-iUDP", "-a", "-p", pids, "-F", "pPn").Output()
+	return parseLsof(string(out))
+}
+
+func parseLsof(out string) []sock {
+	var res []sock
+	pid, proto := "", ""
+	for _, l := range strings.Split(out, "\n") {
 		if l == "" {
 			continue
 		}
 		switch l[0] {
+		case 'p':
+			pid = l[1:]
 		case 'P':
 			proto = l[1:]
 		case 'n':
 			name := l[1:]
 			if strings.Contains(name, "->") || proto == "UDP" {
-				res = append(res, proto+" "+name)
+				res = append(res, sock{pid, proto, name})
 			}
 		}
 	}
 	return res
+}
+
+// port 取 "*:1234" / "127.0.0.1:1234" / "[::1]:1234" 的端口。
+func port(addr string) string {
+	if i := strings.LastIndexAny(addr, ":."); i >= 0 {
+		return addr[i+1:]
+	}
+	return ""
+}
+
+// udpStats 用 macOS 自带的 nettop（不需要管理员权限）读一个进程每个 UDP 套接字的发出字节数。
+// 返回 本地端口 → 发出字节；以及其中带了非本机对端的套接字（视为直连）。
+func udpStats(pid string) (map[string]int64, []string) {
+	out, _ := exec.Command("nettop", "-L", "1", "-n", "-x", "-m", "udp", "-J", "bytes_out", "-p", pid).Output()
+	return parseNettop(string(out))
+}
+
+// parseNettop 解析形如
+//
+//	,bytes_out,
+//	Chromium Helper.123,96,
+//	udp4 *:55161<->*:*,96,
+//	udp4 10.0.0.2:5000<->203.0.113.9:3478,40,
+func parseNettop(out string) (map[string]int64, []string) {
+	sent := map[string]int64{}
+	var peers []string
+	for _, l := range strings.Split(out, "\n") {
+		if !strings.HasPrefix(l, "udp") {
+			continue
+		}
+		f := strings.Split(l, ",")
+		if len(f) < 2 {
+			continue
+		}
+		_, addrs, _ := strings.Cut(f[0], " ")
+		local, peer, _ := strings.Cut(addrs, "<->")
+		n, _ := strconv.ParseInt(strings.TrimSpace(f[1]), 10, 64)
+		p := port(local)
+		if n >= sent[p] {
+			sent[p] = n
+		}
+		if peer != "" && peer != "*:*" && peer != "*.*" {
+			h := peer
+			if i := strings.LastIndexAny(peer, ":."); i >= 0 {
+				h = peer[:i]
+			}
+			if ip := net.ParseIP(strings.Trim(h, "[]")); ip == nil || !ip.IsLoopback() {
+				peers = append(peers, "UDP "+local+"->"+peer)
+			}
+		}
+	}
+	return sent, peers
 }
 
 // isLoopback 连接（或 UDP 绑定）的对端是否本机。UDP 未连接时只有本地地址，按本地地址判断。
