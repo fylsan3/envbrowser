@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><title>游龙 · 指纹检测</title>
+<style>
+body{font:14px -apple-system,"PingFang SC",sans-serif;margin:24px;color:#1d1d1f;background:#fafafa}
+h1{font-size:20px;margin:0 0 4px}#sum{margin:8px 0 16px;font-weight:600}
+table{border-collapse:collapse;width:100%;background:#fff}td,th{border:1px solid #ddd;padding:6px 8px;text-align:left;vertical-align:top;word-break:break-all}
+th{background:#f0f0f0}tr.ok td:last-child{color:#1a7f37}tr.bad td:last-child{color:#c62828;font-weight:600}tr.warn td:last-child{color:#b26a00}
+pre{color:#666}
+</style></head>
+<body><h1>游龙 · 指纹检测</h1><div>只在测试模式下可访问；结果保存在环境目录 reports/ 下。</div>
+<div id="sum"></div><pre id="out"></pre>
+<table><thead><tr><th>检测项</th><th>配置目标</th><th>实际读取</th><th>读取位置</th><th>结果</th></tr></thead><tbody id="rows"></tbody></table>
+<script src="/collect.js"></script><script src="/main.js"></script>
+</body></html>

@@ -25,7 +25,7 @@ GOOS=darwin GOARCH=arm64 CGO_ENABLED=0 go build -trimpath \
   -ldflags "-s -w -X main.version=$TAG" -o "$OUT/bin/envbrowser" ./cmd/envbrowser
 cp README.md "$OUT/"
 cp docs/需求规格-v2.html "$OUT/docs/"
-cp scripts/install-browser.sh "$OUT/scripts/"
+cp scripts/install-browser.sh scripts/field-test.sh "$OUT/scripts/"
 
 # --norsrc --noextattr：不把 macOS 扩展属性打成 ._ 文件
 (cd dist && ditto -c -k --norsrc --noextattr --noacl --keepParent "$NAME" "$NAME.zip")

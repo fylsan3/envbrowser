@@ -47,6 +47,7 @@ scripts/install-browser.sh --check   # 只检查已安装的版本
 | `internal/launcher` | 环境锁（记录主程序与浏览器 PID）、孤儿浏览器清理、fingerprint-chromium 启动参数 |
 | `internal/runner` | 加锁 → 清理孤儿 → 中转 → 出口校验（不通过不启动）→ 浏览器 → 复查 → 清理 |
 | `internal/admin` | 管理页面（环境列表、新建/编辑/复制、详情、模板、设置）。页面和脚本打包在程序里，不用外部前端库；令牌、Host、Origin 校验；运行中不能改代理和指纹 |
+| `internal/fpcheck` | 指纹检测页（阶段 2）：四处采集、逐项与环境配置比对、重启一致性与跨环境比对，报告存到环境目录 |
 | `internal/e2e` | 端到端测试：本机临时起带随机用户名密码的模拟 socks5h / http 上游，代替真实代理（见下方“测试”） |
 
 ## 编译
@@ -57,7 +58,7 @@ go test ./cmd/... ./internal/... ./templates/...
 go build -o bin/envbrowser ./cmd/envbrowser
 
 # 打包发布（产物在 dist/，只含程序、README、文档、安装脚本）
-scripts/release.sh v0.2.0
+scripts/release.sh v0.3.0
 ```
 
 ## 测试
@@ -72,7 +73,30 @@ scripts/release.sh v0.2.0
 
 真浏览器那项需要先运行 `scripts/install-browser.sh`；加 `-short` 跳过。浏览器装在别处时用 `ENVBROWSER_CHROMIUM=/路径/Chromium.app` 指定。
 
-模拟测不了、仍需真实代理确认的只有：真实出口 IP 与录入值一致、真实 http 代理不加暴露头、有界面时零直连且本机无 DNS 查询（需求规格第 12.1 节）。
+模拟测不了、仍需真实代理确认的只有：真实出口 IP 与录入值一致、真实 http 代理不加暴露头、有界面时零直连且本机无 DNS 查询（需求规格第 12.1 节）。这些由下面的“真实代理实测”一次做完。
+
+### 指纹检测页
+
+```bash
+./bin/envbrowser fpcheck env-0001 env-0002      # 每个环境打开检测页 3 次（-n 修改），逐项比对配置并做跨环境比对
+```
+
+检测页在主页面、iframe、Worker、Service Worker 四处采集，报告存到 `~/BrowserEnvs/env-xxxx/reports/`。运行时临时开测试模式，不改 settings.json。
+
+### 真实代理实测（在另一台 Mac 上一次做完）
+
+```bash
+# 1. 安装（版本号换成要测的版本）
+V=v0.3.0; cd ~ && curl -fLO https://github.com/fylsan3/envbrowser/releases/download/$V/envbrowser-$V-macos-arm64.zip \
+  && ditto -x -k envbrowser-$V-macos-arm64.zip . && cd envbrowser-$V-macos-arm64 && scripts/install-browser.sh
+
+# 2. 实测：粘贴代理（不显示）→ 输开机密码（只用于监控 DNS）→ 自动打开两个窗口，约 3 分钟，期间不要操作
+scripts/field-test.sh
+
+# 3. 把生成的 field-report.txt 发回（代理地址、用户名、密码、出口 IP、本机公网 IP 已打码）
+```
+
+检查项：① 出口 IP 与国家；② 明文 http 请求头；③ 浏览器零直连、本机无 DNS 查询；④ 检测页全部项目与两个环境 Cookie 隔离；⑤ 断上游后连接全部切断、密码错误不启动；⑥ 结束无残留进程。实测在临时目录进行，不碰 `~/BrowserEnvs`。
 
 ## 使用
 

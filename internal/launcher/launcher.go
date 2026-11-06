@@ -318,8 +318,21 @@ func ExecPath(appOrBin string) string {
 	return appOrBin
 }
 
+// Options 启动时的可选项。
+//   - URLs：启动后打开的网址，空时打开 about:blank。
+//   - Extra：附加参数，只给自动化测试用（例如无界面模式），正式使用不传。
+type Options struct {
+	URLs  []string
+	Extra []string
+}
+
 // Start 启动 Chromium。调用方负责 Wait。
 func Start(chromium string, e *config.Env, relayPort int) (*exec.Cmd, error) {
+	return StartWith(chromium, e, relayPort, Options{})
+}
+
+// StartWith 同 Start，按 opt 替换起始网址、追加参数。
+func StartWith(chromium string, e *config.Env, relayPort int, opt Options) (*exec.Cmd, error) {
 	bin := ExecPath(chromium)
 	if _, err := os.Stat(bin); err != nil {
 		return nil, fmt.Errorf("找不到 Chromium: %s", bin)
@@ -327,7 +340,17 @@ func Start(chromium string, e *config.Env, relayPort int) (*exec.Cmd, error) {
 	if err := os.MkdirAll(e.BrowserDir(), 0o700); err != nil {
 		return nil, err
 	}
-	cmd := exec.Command(bin, Args(e, relayPort)...)
+	args := Args(e, relayPort)
+	if len(opt.URLs) > 0 || len(opt.Extra) > 0 {
+		args = args[:len(args)-1] // 去掉 about:blank
+		args = append(args, opt.Extra...)
+		if len(opt.URLs) > 0 {
+			args = append(args, opt.URLs...)
+		} else {
+			args = append(args, "about:blank")
+		}
+	}
+	cmd := exec.Command(bin, args...)
 	cmd.Env = Env(e)
 	if err := os.MkdirAll(e.LogDir(), 0o700); err == nil {
 		if f, err := os.OpenFile(filepath.Join(e.LogDir(), "chromium.log"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600); err == nil {

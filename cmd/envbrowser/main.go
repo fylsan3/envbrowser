@@ -69,6 +69,10 @@ func main() {
 		check(st, args)
 	case "settings":
 		settings(store, st, args)
+	case "fpcheck":
+		fpcheckCmd(store, st, args)
+	case "fieldtest":
+		fieldtest(st, args)
 	default:
 		usage()
 	}
@@ -82,6 +86,8 @@ func usage() {
   envbrowser open env-0001
   envbrowser check -proxy URL [-exit 出口IP]
   envbrowser version
+  envbrowser fpcheck env-0001 [env-0002 ...] [-n 次数]   打开环境跑检测页并比对（需测试模式）
+  envbrowser fieldtest                    真实代理实测（由 scripts/field-test.sh 调用）
   envbrowser settings [-chromium /path/Chromium.app] [-chromium-version 148.0.7778.215] [-test-mode=true|false]
 
 数据目录默认 ~/BrowserEnvs，可用环境变量 ENVBROWSER_ROOT 修改。`)

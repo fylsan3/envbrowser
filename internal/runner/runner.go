@@ -73,6 +73,11 @@ func (m multiWriter) Write(p []byte) (int, error) {
 // Open 打开一个环境。成功返回时浏览器已启动；浏览器退出后 Done() 关闭。
 // save 用于把首次取得的出口国家写回 env.json；可为 nil。
 func Open(e *config.Env, st config.Settings, local net.IP, save func(*config.Env) error) (*Session, error) {
+	return OpenWith(e, st, local, save, launcher.Options{})
+}
+
+// OpenWith 同 Open，可指定启动后打开的网址（检测页用）和附加参数（只给测试用）。
+func OpenWith(e *config.Env, st config.Settings, local net.IP, save func(*config.Env) error, opt launcher.Options) (*Session, error) {
 	if err := e.Validate(); err != nil {
 		return nil, err
 	}
@@ -145,7 +150,7 @@ func Open(e *config.Env, st config.Settings, local net.IP, save func(*config.Env
 		s.Logf("提示: 时区 %s 属于 %s，与出口国家 %s 不符（不拦截）", e.Fingerprint.Timezone, want, e.Proxy.ExitCountry)
 	}
 
-	cmd, err := launcher.Start(st.ChromiumPath, e, r.Port())
+	cmd, err := launcher.StartWith(st.ChromiumPath, e, r.Port(), opt)
 	if err != nil {
 		return fail(err)
 	}
@@ -193,13 +198,23 @@ func Open(e *config.Env, st config.Settings, local net.IP, save func(*config.Env
 	}()
 	go func() {
 		<-mctx.Done()
-		// 被要求关闭时结束浏览器进程
+		// 被要求关闭时结束浏览器进程：先 SIGTERM，5 秒内没退出再 SIGKILL
+		// （断网后浏览器可能卡在网络请求上，迟迟不退出）。
 		if s.Status0() != "closed" && cmd.ProcessState == nil {
 			cmd.Process.Signal(syscall.SIGTERM)
+			select {
+			case <-s.done:
+			case <-time.After(KillAfter):
+				s.Logf("浏览器 %s 内未退出，强制结束", KillAfter)
+				cmd.Process.Kill()
+			}
 		}
 	}()
 	return s, nil
 }
+
+// KillAfter 关闭环境时等浏览器自行退出的时间，超时强制结束。
+var KillAfter = 5 * time.Second
 
 func (s *Session) Status0() string { st, _, _ := s.Status(); return st }
 

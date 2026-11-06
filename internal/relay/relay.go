@@ -88,6 +88,13 @@ func (r *Relay) Block(reason string) {
 
 func (r *Relay) Blocked() bool { return r.blocked.Load() }
 
+// Conns 当前经中转的连接数（浏览器侧与上游侧各算一条）。
+func (r *Relay) Conns() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return len(r.conns)
+}
+
 // PortCooldown 中转端口释放后，这段时间内不再分配给其他环境。
 // 防止仍连着旧端口的浏览器（例如主程序异常退出后残留的）接到别的环境的代理上。
 var PortCooldown = 60 * time.Second
