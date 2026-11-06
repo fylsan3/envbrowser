@@ -33,7 +33,7 @@ scripts/install-browser.sh --check   # 只检查已安装的版本
 |---|---|---|
 | 浏览器 | 第三方软件，解压后约 367MB，超过 GitHub 单文件上限 | `scripts/install-browser.sh` |
 | Go 工具链 | 可从官网下载 | 放到 `.toolchain/go/`，或使用系统 Go 1.22+ |
-| 编译好的程序 | 由源码生成 | 自己编译（见下方），或从本仓库 Releases 下载 `envbrowser-版本-macos-arm64.zip` |
+| 编译好的程序 | 由源码生成 | 自己编译（见下方），或从本仓库 Releases 下载 `envbrowser-版本-macos-arm64.zip`（命令行版）/ `envbrowser-app-版本-macos-arm64.zip`（游龙.app，内置浏览器） |
 | 环境数据 `~/BrowserEnvs` | **含明文代理密码** | 程序运行时生成 |
 
 ## 模块
@@ -58,7 +58,7 @@ go test ./cmd/... ./internal/... ./templates/...
 go build -o bin/envbrowser ./cmd/envbrowser
 
 # 打包发布（产物在 dist/：命令行版 zip + 内置浏览器的 游龙.app zip，都不含环境数据）
-scripts/release.sh v0.3.0
+scripts/release.sh v0.4.0
 ```
 
 ## 测试
@@ -87,7 +87,7 @@ scripts/release.sh v0.3.0
 
 ```bash
 # 1. 安装（版本号换成要测的版本）
-V=v0.3.0; cd ~ && curl -fLO https://github.com/fylsan3/envbrowser/releases/download/$V/envbrowser-$V-macos-arm64.zip \
+V=v0.4.0; cd ~ && curl -fLO https://github.com/fylsan3/envbrowser/releases/download/$V/envbrowser-$V-macos-arm64.zip \
   && ditto -x -k envbrowser-$V-macos-arm64.zip . && cd envbrowser-$V-macos-arm64 && scripts/install-browser.sh
 
 # 2. 实测：粘贴代理（不显示）→ 输开机密码（只用于监控 DNS）→ 自动打开两个窗口，约 3 分钟，期间不要操作
@@ -102,7 +102,13 @@ scripts/field-test.sh
 
 ### 游龙.app（推荐）
 
-1. 解压 `游龙-版本-macos-arm64.zip`，把 `游龙.app` 拖进“应用程序”（浏览器已内置，不用再装）。
+1. 解压 `envbrowser-app-版本-macos-arm64.zip`（解压出 `游龙-版本-macos-arm64` 目录），把 `游龙.app` 拖进“应用程序”（浏览器已内置，不用再装）。
+
+   ```bash
+   V=v0.4.0; cd ~/Downloads && curl -fLO "https://github.com/fylsan3/envbrowser/releases/download/$V/envbrowser-app-$V-macos-arm64.zip" \
+     && ditto -x -k "envbrowser-app-$V-macos-arm64.zip" . && ditto "游龙-$V-macos-arm64/游龙.app" /Applications/游龙.app
+   ```
+
 2. 第一次双击会被系统拦下（本机临时签名，没有 Apple 公证）：打开“系统设置 → 隐私与安全性”，在底部点“仍要打开”。之后正常双击即可。
 3. 双击后在后台运行（不显示 Dock 图标），自动打开管理页面；再次双击只会重新打开管理页面。
 4. 退出：管理页面右上角“退出游龙”，会先关闭所有环境。

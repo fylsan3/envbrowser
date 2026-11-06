@@ -1,7 +1,8 @@
 #!/bin/bash
 # 打包发布用的程序，产物在 dist/（已 gitignore），都不含任何环境数据：
 #   1. envbrowser-版本-macos-arm64.zip       命令行版：程序 + README + 需求文档 + 脚本（不含浏览器）
-#   2. 游龙-版本-macos-arm64.zip             游龙.app（内置浏览器，本机临时签名）+ 安全自检脚本
+#   2. envbrowser-app-版本-macos-arm64.zip   游龙.app（内置浏览器，本机临时签名）+ 安全自检脚本
+#      （zip 文件名用英文：GitHub 会改写附件名里的中文；解压出的目录仍叫 游龙-版本-macos-arm64）
 # 两个 zip 都算 SHA-256。
 # 用法：scripts/release.sh v0.2.0
 # 发布到 GitHub：gh release create v0.2.0 dist/envbrowser-v0.2.0-macos-arm64.zip --notes-file ...
@@ -37,11 +38,13 @@ echo "已生成 dist/$NAME.zip"
 # 游龙.app
 APPNAME="游龙-${TAG}-macos-arm64"
 APPOUT="dist/$APPNAME"
-rm -rf "$APPOUT" "dist/$APPNAME.zip"
+rm -rf "$APPOUT"
 mkdir -p "$APPOUT/scripts"
 scripts/build-app.sh "$TAG" "$APPOUT"
 cp scripts/sandbox-check.sh "$APPOUT/scripts/"
 cp README.md "$APPOUT/"
-(cd dist && ditto -c -k --norsrc --noextattr --noacl --keepParent "$APPNAME" "$APPNAME.zip")
-shasum -a 256 "dist/$APPNAME.zip" | tee "dist/$APPNAME.zip.sha256"
-echo "已生成 dist/$APPNAME.zip"
+APPZIP="envbrowser-app-${TAG}-macos-arm64.zip"
+rm -f "dist/$APPZIP"
+(cd dist && ditto -c -k --norsrc --noextattr --noacl --keepParent "$APPNAME" "$APPZIP")
+shasum -a 256 "dist/$APPZIP" | tee "dist/$APPZIP.sha256"
+echo "已生成 dist/$APPZIP"
