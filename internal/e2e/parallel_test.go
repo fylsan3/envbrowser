@@ -3,7 +3,6 @@ package e2e
 import (
 	"fmt"
 	"net"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -112,7 +111,7 @@ func TestFiveEnvsParallel(t *testing.T) {
 	}
 
 	// 5 个检测页同时回报
-	headlessOnly := func(item string) bool { return strings.HasPrefix(item, "显卡") || item == "窗口尺寸" }
+	headlessOnly := func(item string) bool { return headlessOrBase(item) }
 	byEnv := map[string][]*fpcheck.Report{}
 	var mu sync.Mutex
 	for i := range envs {

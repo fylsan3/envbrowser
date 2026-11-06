@@ -3,6 +3,7 @@ package fpcheck
 import (
 	"fmt"
 	"net"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -10,9 +11,17 @@ import (
 	"envbrowser/internal/config"
 )
 
+// Chips 比对显卡型号用的两个芯片名：本机芯片、环境所用模板写的芯片（如 "Apple M2"）。
+type Chips struct {
+	Host     string
+	Template string
+}
+
 // Evaluate 把页面采集结果与环境配置逐项比对。
-// hostChip 为本机芯片名（如 "Apple M2"），显卡不伪装时 WebGL 型号应包含它。
-func Evaluate(e *config.Env, raw Raw, local net.IP, hostChip string) *Report {
+// 显卡不伪装时 WebGL 型号应是本机芯片；无论伪装与否，都应与模板芯片对得上，
+// 否则「模板说是 M2、显卡说是别的芯片」这种组合矛盾会被识别出来。
+func Evaluate(e *config.Env, raw Raw, local net.IP, chips Chips) *Report {
+	hostChip := chips.Host
 	rep := &Report{Env: e.ID, Time: time.Now(), Seed: e.Fingerprint.Seed.Fingerprint, Raw: raw}
 	add := func(r Row) { rep.Rows = append(rep.Rows, r) }
 	fp, m := e.Fingerprint, e.Modules
@@ -42,6 +51,18 @@ func Evaluate(e *config.Env, raw Raw, local net.IP, hostChip string) *Report {
 			check("语言 navigator.language", fp.Languages[0], p.Lang, p.Lang == fp.Languages[0])
 			want := strings.Join(fp.Languages, ",")
 			check("语言 navigator.languages", want, p.Langs, p.Langs == want)
+			// Intl 默认区域：网页不指定语言时，日期、数字、排序都按它来，应与环境语言一致
+			lang := fp.Languages[0]
+			got := fmt.Sprintf("日期 %s / 数字 %s / 排序 %s", nonEmpty(p.IntlDate, "（空）"), nonEmpty(p.IntlNumber, "（空）"), nonEmpty(p.IntlCollator, "（空）"))
+			if p.IntlErr != "" {
+				got = "出错 " + p.IntlErr
+			}
+			check("Intl 默认区域", lang, got,
+				p.IntlErr == "" && sameLocale(p.IntlDate, lang) && sameLocale(p.IntlNumber, lang) && sameLocale(p.IntlCollator, lang))
+			// 时区显示名：默认区域写出的、Date.toString() 写出的，应和按环境语言写出的相同
+			check("时区显示名与语言一致", nonEmpty(p.TZNameLang, "（空）"),
+				fmt.Sprintf("Intl %s / Date %s", nonEmpty(p.TZNameDefault, "（空）"), nonEmpty(p.DateString, "（空）")),
+				p.TZNameLang != "" && p.TZNameDefault == p.TZNameLang && p.DateString == p.TZNameLang)
 		}
 		if m["fingerprint"] && m["hardware"] && fp.HardwareConcurrency > 0 {
 			check("CPU 核数", fmt.Sprint(fp.HardwareConcurrency), fmt.Sprint(p.Cores), p.Cores == fp.HardwareConcurrency)
@@ -59,12 +80,23 @@ func Evaluate(e *config.Env, raw Raw, local net.IP, hostChip string) *Report {
 		}
 		check("自动化痕迹 webdriver", "false", fmt.Sprint(p.Webdriver), !p.Webdriver)
 		if !m["gpu"] {
-			ok := hostChip == "" || strings.Contains(p.GLRenderer, hostChip)
+			ok := hostChip == "" || chipIn(p.GLRenderer, hostChip)
 			check("显卡（不伪装，显示真机）", nonEmpty(hostChip, "本机芯片"), p.GLRenderer, ok)
 		} else {
 			add(Row{Item: "显卡（伪装）", Want: "随种子", Got: p.GLRenderer, Where: where, OK: true, Warn: true})
 		}
-		add(Row{Item: "内存 deviceMemory", Want: "随种子", Got: fmt.Sprint(p.Mem), Where: where, OK: true})
+		if chips.Template != "" {
+			check("显卡与模板芯片一致", chips.Template+"（模板 "+nonEmpty(fp.Template, "?")+"）", p.GLRenderer, chipIn(p.GLRenderer, chips.Template))
+		}
+		// 核数与显卡显示的芯片是否吻合（Apple 官方规格里该芯片有哪些核数配置）
+		if chip := chipOf(p.GLRenderer); chip == "" {
+			add(Row{Item: "核数与显卡芯片吻合", Want: "芯片已知", Got: nonEmpty(p.GLRenderer, "（空）"), Where: where, OK: true, Warn: true})
+		} else if allowed, known := chipCores[chip]; !known {
+			add(Row{Item: "核数与显卡芯片吻合", Want: chip + " 未收录", Got: fmt.Sprint(p.Cores), Where: where, OK: true, Warn: true})
+		} else {
+			check("核数与显卡芯片吻合", chip+" 应为 "+joinInts(allowed)+" 核", fmt.Sprint(p.Cores), containsInt(allowed, p.Cores))
+		}
+		check("内存 deviceMemory 取值", "0.25～32 之间的 2 的幂", fmt.Sprint(p.Mem), validMem(p.Mem))
 		add(Row{Item: "Canvas 哈希", Want: "随种子", Got: p.Canvas, Where: where, OK: isHash(p.Canvas)})
 		add(Row{Item: "WebGL 图像哈希", Want: "随种子", Got: p.GLImage, Where: where, OK: isHash(p.GLImage)})
 	}
@@ -80,6 +112,9 @@ func Evaluate(e *config.Env, raw Raw, local net.IP, hostChip string) *Report {
 			{"内存", func(p Place) string { return fmt.Sprint(p.Mem) }},
 			{"语言", func(p Place) string { return p.Langs }},
 			{"时区", func(p Place) string { return p.TZ }},
+			{"Intl 日期区域", func(p Place) string { return p.IntlDate }},
+			{"Intl 数字区域", func(p Place) string { return p.IntlNumber }},
+			{"时区显示名", func(p Place) string { return p.TZNameDefault + " / " + p.DateString }},
 			{"Client Hints 品牌", func(p Place) string { return p.Brands }},
 			{"Client Hints 系统版本", func(p Place) string { return p.PlatformVersion }},
 			{"Canvas 哈希", func(p Place) string { return p.Canvas }},
@@ -102,9 +137,31 @@ func Evaluate(e *config.Env, raw Raw, local net.IP, hostChip string) *Report {
 		add(Row{Item: "窗口尺寸", Want: want, Got: x.Window, Where: "主页面", OK: true, Warn: x.Window != want})
 	}
 	add(Row{Item: "屏幕（不支持伪装）", Want: "真机值", Got: x.Screen, Where: "主页面", OK: true})
+	if sw, sh, ok1 := dims(x.Screen); ok1 {
+		ww, wh, ok2 := dims(x.Window)
+		add(Row{Item: "窗口不大于屏幕", Want: fmt.Sprintf("不超过 %dx%d", sw, sh), Got: x.Window, Where: "主页面",
+			OK: ok2 && ww <= sw && wh <= sh})
+	}
 	add(Row{Item: "音频哈希", Want: "随种子", Got: x.Audio, Where: "主页面", OK: isHash(x.Audio)})
 	add(Row{Item: "字体列表", Want: "真机字体", Got: x.Fonts, Where: "主页面", OK: x.Fonts != ""})
 	add(Row{Item: "字体测宽（ClientRects）", Want: "随种子", Got: shortHash(x.Rects), Where: "主页面", OK: x.Rects != ""})
+
+	// 实际发出的请求头（服务端记录）应与脚本读到的一致
+	if h := raw.Headers; h != nil && len(raw.Places) > 0 {
+		p := raw.Places[0]
+		add(Row{Item: "请求头 User-Agent", Want: "与 navigator.userAgent 相同", Got: h.UA, Where: "请求头", OK: h.UA == p.UA})
+		if m["language"] && len(fp.Languages) > 0 {
+			want := strings.Join(fp.Languages, ",")
+			got := acceptLangTags(h.AcceptLang)
+			add(Row{Item: "请求头 Accept-Language", Want: want, Got: nonEmpty(h.AcceptLang, "（空）"), Where: "请求头", OK: got == want})
+		}
+		if m["fingerprint"] && m["ua_client_hints"] {
+			add(Row{Item: "请求头 sec-ch-ua", Want: `含 "Google Chrome";v="148"`, Got: nonEmpty(h.SecCHUA, "（空）"), Where: "请求头",
+				OK: strings.Contains(h.SecCHUA, `"Google Chrome";v="148"`)})
+			add(Row{Item: "请求头 sec-ch-ua-platform", Want: `"macOS"`, Got: nonEmpty(h.SecCHUAPF, "（空）"), Where: "请求头",
+				OK: h.SecCHUAPF == `"macOS"`})
+		}
+	}
 
 	// Cookie 隔离：只允许看到本环境自己写的标记
 	var foreign []string
@@ -179,6 +236,91 @@ func describe(vals map[string][]string) string {
 		b = append(b, nonEmpty(k, "（空）")+" ← "+strings.Join(vals[k], "、"))
 	}
 	return strings.Join(b, "；")
+}
+
+// sameLocale 判断 Intl 给出的区域与环境语言是否一致：主语言相同，且地区相同或省略地区（如 ja 对 ja-JP）。
+func sameLocale(got, want string) bool {
+	if got == "" {
+		return false
+	}
+	g, w := strings.Split(strings.ToLower(got), "-"), strings.Split(strings.ToLower(want), "-")
+	if g[0] != w[0] {
+		return false
+	}
+	return len(g) == 1 || len(w) == 1 || g[len(g)-1] == w[len(w)-1]
+}
+
+// acceptLangTags 把 "ja-JP,ja;q=0.9" 还原成 "ja-JP,ja"。
+func acceptLangTags(h string) string {
+	var out []string
+	for _, part := range strings.Split(h, ",") {
+		tag, _, _ := strings.Cut(strings.TrimSpace(part), ";")
+		if tag != "" {
+			out = append(out, tag)
+		}
+	}
+	return strings.Join(out, ",")
+}
+
+// chipCores Apple 芯片的 CPU 核数配置（Apple 官方技术规格）。
+var chipCores = map[string][]int{
+	"Apple M1": {8}, "Apple M1 Pro": {8, 10}, "Apple M1 Max": {10}, "Apple M1 Ultra": {20},
+	"Apple M2": {8}, "Apple M2 Pro": {10, 12}, "Apple M2 Max": {12}, "Apple M2 Ultra": {24},
+	"Apple M3": {8}, "Apple M3 Pro": {11, 12}, "Apple M3 Max": {14, 16}, "Apple M3 Ultra": {28, 32},
+	"Apple M4": {8, 10}, "Apple M4 Pro": {12, 14}, "Apple M4 Max": {14, 16},
+}
+
+var chipRe = regexp.MustCompile(`Apple M\d+(?: (?:Pro|Max|Ultra))?`)
+
+// chipOf 从 WebGL 型号里取出芯片名，如 "ANGLE (Apple, ANGLE Metal Renderer: Apple M4 Pro, ...)" → "Apple M4 Pro"。
+func chipOf(renderer string) string { return chipRe.FindString(renderer) }
+
+// chipIn 判断 WebGL 型号里的芯片是否正好是 chip（"Apple M2" 不能匹配 "Apple M2 Pro"）。
+func chipIn(renderer, chip string) bool { return chip != "" && chipOf(renderer) == chip }
+
+func containsInt(xs []int, v int) bool {
+	for _, x := range xs {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+func joinInts(xs []int) string {
+	var b []string
+	for _, x := range xs {
+		b = append(b, fmt.Sprint(x))
+	}
+	return strings.Join(b, " 或 ")
+}
+
+// validMem deviceMemory 只会是 2 的幂（0.25～32）。实测 Chromium 148 在 16GB 的 Mac 上不加参数读到 16，已不再封顶 8。
+func validMem(v any) bool {
+	f, ok := v.(float64)
+	if !ok {
+		if i, ok2 := v.(int); ok2 {
+			f, ok = float64(i), true
+		}
+	}
+	if !ok {
+		return false
+	}
+	for _, x := range []float64{0.25, 0.5, 1, 2, 4, 8, 16, 32} {
+		if f == x {
+			return true
+		}
+	}
+	return false
+}
+
+// dims 取 "宽x高..." 的前两段。
+func dims(s string) (int, int, bool) {
+	var w, h int
+	if n, _ := fmt.Sscanf(strings.ReplaceAll(s, "x", " "), "%d %d", &w, &h); n != 2 {
+		return 0, 0, false
+	}
+	return w, h, true
 }
 
 func isHash(s string) bool { return len(s) == 16 && !strings.Contains(s, " ") }

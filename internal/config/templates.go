@@ -50,6 +50,20 @@ func (s *Store) Templates() ([]Template, error) {
 	return pf.Templates, nil
 }
 
+// TemplateByName 按名称查模板（不论是否启用）。查不到或读取失败时返回 false。
+func (s *Store) TemplateByName(name string) (Template, bool) {
+	ts, err := s.Templates()
+	if err != nil {
+		return Template{}, false
+	}
+	for _, t := range ts {
+		if t.Name == name {
+			return t, true
+		}
+	}
+	return Template{}, false
+}
+
 // pickTemplate 从已启用模板中选被使用次数最少的，次数相同时随机。
 func pickTemplate(ts []Template, used map[string]int) (Template, error) {
 	var best []Template

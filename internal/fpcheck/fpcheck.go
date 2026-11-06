@@ -38,6 +38,13 @@ type Place struct {
 	Langs           string `json:"langs"`
 	TZ              string `json:"tz"`
 	TZOffset        int    `json:"tzOffset"`
+	IntlDate        string `json:"intlDate"`      // Intl.DateTimeFormat 默认区域
+	IntlNumber      string `json:"intlNumber"`    // Intl.NumberFormat 默认区域
+	IntlCollator    string `json:"intlCollator"`  // Intl.Collator 默认区域
+	TZNameDefault   string `json:"tzNameDefault"` // 默认区域写出的时区名
+	TZNameLang      string `json:"tzNameLang"`    // 按 navigator.language 写出的时区名
+	DateString      string `json:"dateString"`    // Date.toString() 括号里的时区名
+	IntlErr         string `json:"intlErr,omitempty"`
 	Webdriver       bool   `json:"webdriver"`
 	Brands          string `json:"brands"`
 	UAPlatform      string `json:"uaPlatform"`
@@ -71,12 +78,21 @@ type Extra struct {
 	Cookie   string       `json:"cookie"`
 }
 
+// Headers 浏览器提交报告时实际发出的请求头（由服务端记录，不采信页面自报）。
+type Headers struct {
+	UA         string `json:"ua"`
+	AcceptLang string `json:"acceptLang"`
+	SecCHUA    string `json:"secChUa"`
+	SecCHUAPF  string `json:"secChUaPlatform"`
+}
+
 // Raw 页面提交的原始数据。
 type Raw struct {
-	Env    string   `json:"env"`
-	Places []Place  `json:"places"`
-	Extra  Extra    `json:"extra"`
-	Errors []string `json:"errors"`
+	Env     string   `json:"env"`
+	Places  []Place  `json:"places"`
+	Extra   Extra    `json:"extra"`
+	Errors  []string `json:"errors"`
+	Headers *Headers `json:"headers,omitempty"`
 }
 
 // Row 报告的一行：检测项 / 配置目标 / 实际读取 / 读取位置 / 结果。
@@ -180,7 +196,13 @@ func (s *Server) report(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "环境不存在", http.StatusNotFound)
 		return
 	}
-	rep := Evaluate(e, raw, s.LocalIP, config.HostChip())
+	raw.Headers = &Headers{UA: r.UserAgent(), AcceptLang: r.Header.Get("Accept-Language"),
+		SecCHUA: r.Header.Get("Sec-Ch-Ua"), SecCHUAPF: r.Header.Get("Sec-Ch-Ua-Platform")}
+	tplChip := ""
+	if t, ok := s.Store.TemplateByName(e.Fingerprint.Template); ok {
+		tplChip = t.Chip
+	}
+	rep := Evaluate(e, raw, s.LocalIP, Chips{Host: config.HostChip(), Template: tplChip})
 	if f, err := Save(e, rep); err == nil {
 		rep.File = f
 	}

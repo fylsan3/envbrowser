@@ -80,6 +80,21 @@ async function collectFP(where) {
   r.langs = (n.languages || []).join(",");
   r.tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
   r.tzOffset = new Date(2026, 0, 15).getTimezoneOffset();
+  // Intl 默认区域：日期、数字、排序各自的 locale（网页不指定语言时用的就是它）
+  try {
+    r.intlDate = Intl.DateTimeFormat().resolvedOptions().locale;
+    r.intlNumber = Intl.NumberFormat().resolvedOptions().locale;
+    r.intlCollator = Intl.Collator().resolvedOptions().locale;
+    // 时区显示名：默认区域写出来的，和按 navigator.language 写出来的，应当相同
+    const tzName = (loc) =>
+      (new Intl.DateTimeFormat(loc, { timeZoneName: "long" }).formatToParts(new Date(2026, 0, 15)).find((x) => x.type === "timeZoneName") || {}).value || "";
+    r.tzNameDefault = tzName(undefined);
+    r.tzNameLang = tzName(n.language);
+    const m = new Date(2026, 0, 15).toString().match(/\(([^)]*)\)/);
+    r.dateString = m ? m[1] : "";
+  } catch (e) {
+    r.intlErr = String(e);
+  }
   r.webdriver = n.webdriver;
   if (n.userAgentData) {
     r.brands = n.userAgentData.brands.map((b) => b.brand + "/" + b.version).join(",");

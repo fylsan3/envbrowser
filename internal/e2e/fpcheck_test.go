@@ -20,7 +20,8 @@ import (
 //   - 检测页在主页面 / iframe / Worker / Service Worker 采集，服务端逐项比对；
 //   - 环境 A 重启 3 次结果一致；A、B 的 Canvas 哈希不同（音频允许重复，只提示）。
 //
-// 无界面模式下显卡、窗口与有界面不同，这两项只记录不判定；其余项必须全部通过。
+// 无界面模式下显卡、窗口与有界面不同，这几项只记录不判定；
+// 底座已知做不到的项（Intl 区域跟系统走，见需求规格）也只记录。其余项必须全部通过。
 func TestFingerprintPage(t *testing.T) {
 	if testing.Short() {
 		t.Skip("-short 模式跳过真浏览器测试")
@@ -76,7 +77,7 @@ func TestFingerprintPage(t *testing.T) {
 
 	// 无界面模式下不判定的项
 	headlessOnly := func(item string) bool {
-		return strings.HasPrefix(item, "显卡") || item == "窗口尺寸"
+		return headlessOrBase(item)
 	}
 	byEnv := map[string][]*fpcheck.Report{}
 	for i := 0; i < 3; i++ {
@@ -109,6 +110,17 @@ func TestFingerprintPage(t *testing.T) {
 	for _, x := range append(ma.Targets(), mb.Targets()...) {
 		t.Errorf("上游收到了意外的目标 %s", x)
 	}
+}
+
+// headlessOrBase 真浏览器测试里只记录、不判失败的检测项：
+//   - 无界面模式与有界面不同：显卡、窗口尺寸、窗口不大于屏幕（无界面屏幕固定 800x600）、核数与显卡芯片吻合（无界面可能是软件渲染）；
+//   - 底座 fingerprint-chromium 148 已知做不到：Intl 默认区域、时区显示名（都跟着系统语言走，要改需重编底座）。
+func headlessOrBase(item string) bool {
+	switch item {
+	case "窗口尺寸", "窗口不大于屏幕", "核数与显卡芯片吻合", "Intl 默认区域", "时区显示名与语言一致":
+		return true
+	}
+	return strings.HasPrefix(item, "显卡")
 }
 
 type httpServer struct {
