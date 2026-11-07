@@ -134,6 +134,9 @@ func (s *Server) meta(w http.ResponseWriter, r *http.Request) {
 		"test_target":   st.TestTarget,
 		"host_chip":     config.HostChip(),
 		"memory_warn_n": st.MemoryWarnN,
+		"version":       Version,
+		"chromium_ver":  st.ChromiumVer,
+		"root":          s.Store.Root,
 	})
 }
 
@@ -202,12 +205,13 @@ func (s *Server) listReports(w http.ResponseWriter, r *http.Request) {
 		Seed    int64         `json:"seed"`
 		Summary string        `json:"summary"`
 		Failed  int           `json:"failed"`
+		Total   int           `json:"total"`
 		Bad     []fpcheck.Row `json:"bad"` // 未通过或需要人看一眼的项
 	}
 	out := make([]item, 0, len(rs))
 	for i := len(rs) - 1; i >= 0; i-- {
 		x := rs[i]
-		it := item{File: x.File, Time: x.Time, Seed: x.Seed, Summary: x.Summary, Failed: x.Failed, Bad: []fpcheck.Row{}}
+		it := item{File: x.File, Time: x.Time, Seed: x.Seed, Summary: x.Summary, Failed: x.Failed, Total: len(x.Rows), Bad: []fpcheck.Row{}}
 		for _, row := range x.Rows {
 			if !row.OK || row.Warn {
 				it.Bad = append(it.Bad, row)
@@ -294,3 +298,6 @@ func (s *Server) saveSettings(w http.ResponseWriter, r *http.Request) {
 	}
 	w.WriteHeader(204)
 }
+
+// Version 程序版本，由主程序启动时写入，显示在页面侧栏。
+var Version = "dev"

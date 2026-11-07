@@ -251,6 +251,7 @@ func serve(store *config.Store, st config.Settings) {
 		}
 		must(err)
 	}
+	admin.Version = version
 	srv := admin.New(store, st, localIP(st))
 	// 带令牌的地址只存在数据目录里（权限 600），供再次双击时重新打开页面；退出时删除
 	os.WriteFile(urlFile, []byte(srv.URL()+"\n"), 0o600)
